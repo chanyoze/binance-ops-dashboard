@@ -9,5 +9,6 @@ export {
   type CollectorStateRow,
 } from './schema.js'
 export { KlineRepository } from './kline-repository.js'
+export { AnalyticsRepository } from './analytics-repository.js'
 export { PgNotifyBus, CHANNELS, type RealtimeBus } from './realtime-bus.js'
 export { runMigrations } from './migrate.js'

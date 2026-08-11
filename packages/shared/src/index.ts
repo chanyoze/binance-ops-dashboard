@@ -10,6 +10,13 @@ export {
   type PipelineEventType,
   type CollectorState,
   type RealtimeMessage,
+  // 대시보드 조회 결과 (읽기 경로)
+  type Candle,
+  type MarketStats,
+  type CoverageStat,
+  type RelativeStrengthPoint,
+  type SymbolLiveState,
+  type OpsSnapshot,
 } from './types.js'
 
 export {

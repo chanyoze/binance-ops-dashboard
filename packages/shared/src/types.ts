@@ -82,6 +82,107 @@ export interface CollectorState {
   reconnectCount: number
 }
 
+/* ============================================================
+ *  대시보드 조회 결과 (읽기 경로)
+ *
+ *  쓰기 경로(Kline / CollectorState)와 타입을 나눈다. 수집기가 넣는 모양과
+ *  화면이 읽는 모양은 애초에 다른 것이고, 하나로 합치면 한쪽 요구가 다른 쪽을
+ *  오염시킨다. 집계는 전부 SQL 에서 끝내므로(D-07) 여기 오는 값은 이미 완성형이다.
+ * ============================================================ */
+
+/**
+ * 차트에 그릴 봉 하나. 원본 1분봉을 요청 인터벌로 접은 결과다.
+ *
+ * 가격·수량은 여전히 문자열이다 — 집계를 거쳤다고 정밀도 규칙이 달라지지 않는다.
+ */
+export interface Candle {
+  openTime: number
+  open: string
+  high: string
+  low: string
+  close: string
+  volume: string
+  quoteVolume: string
+  tradeCount: number
+  takerBuyQuote: string
+  /** 이동평균. 구간이 아직 안 찬 앞부분은 null 이라 선이 끊긴다. */
+  ma: string | null
+  /** 이 봉에 REST 백필분이 섞였는가 — 자가 치유의 흔적을 차트에서 보여준다 */
+  hasBackfill: boolean
+  /** 확정된 봉인가. 마지막 봉은 보통 진행 중이다. */
+  isClosed: boolean
+}
+
+/** 심볼 하나의 24시간 요약 — stat tile 이 그대로 읽는다 */
+export interface MarketStats {
+  symbol: string
+  last: string
+  open24h: string
+  high24h: string
+  low24h: string
+  volume: string
+  quoteVolume: string
+  tradeCount: number
+  /** 0~1. 0.5 가 매수·매도 균형이고, 화면은 이 기준선을 중심으로 그린다 */
+  takerBuyRatio: number
+  vwap: string
+  changePct: number
+  candleCount: number
+}
+
+/** 데이터 완전성 SLA — 기대 봉 수 대비 실제 적재 수 */
+export interface CoverageStat {
+  symbol: string
+  interval: Interval
+  actual: number
+  expected: number
+  pct: number
+  /** 실시간 수집분 / 백필분. 둘의 비가 곧 "백필이 동작했다"는 증거다 */
+  wsCount: number
+  restCount: number
+  firstOpenTime: number | null
+  lastOpenTime: number | null
+}
+
+/** 상대 강도 한 점 — 구간 시작을 100 으로 지수화한 값 (D-07, 이중 축 회피) */
+export interface RelativeStrengthPoint {
+  openTime: number
+  /** symbol -> 지수값. 시작점이 100 이다. */
+  values: Record<string, number>
+}
+
+/** 심볼별 실시간 상태 */
+export interface SymbolLiveState {
+  symbol: string
+  lastPrice: string | null
+  lastPriceAt: number | null
+  lastOpenTime: number | null
+  /** 이 심볼의 마지막 수신으로부터 흐른 시간 (초) */
+  lagSeconds: number | null
+}
+
+/**
+ * 파이프라인 운영 스냅샷 — 대시보드 헬스 밴드가 통째로 읽는 객체.
+ *
+ * lagSeconds 가 이 화면의 Hero 다. 이 값이 틀어지면 나머지 지표가 전부
+ * 거짓말이 되므로, 다른 무엇보다 먼저 읽혀야 한다. (docs/DESIGN.md §7)
+ */
+export interface OpsSnapshot {
+  /** 스냅샷을 뜬 서버 시각. 클라이언트 시계를 믿지 않기 위해 함께 보낸다. */
+  at: number
+  connected: boolean
+  lagSeconds: number | null
+  uptimeMs: number | null
+  reconnectCount: number
+  lastError: string | null
+  symbols: SymbolLiveState[]
+  /** 갭 복구로 메운 봉 수 — 최초 적재(reason=initial)는 제외한다 */
+  recoveredCandles: number
+  recoveryRuns: number
+  /** 최근 봉들의 체결 수에서 환산한 유입량 (건/초) */
+  tradeRate: number
+}
+
 /** SSE 로 브라우저에 밀어주는 실시간 페이로드 */
 export type RealtimeMessage =
   | { channel: 'kline'; symbol: string; kline: Kline }
