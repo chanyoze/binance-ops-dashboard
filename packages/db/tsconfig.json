@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  // drizzle.config.ts 는 빌드 도구 설정이라 소스에 포함하지 않는다.
+  // rootDir(src) 밖에 있어 include 하면 TS6059 가 난다.
+  "include": ["src/**/*.ts"]
+}
