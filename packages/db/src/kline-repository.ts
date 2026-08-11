@@ -173,8 +173,15 @@ export class KlineRepository {
       lastError: patch.lastError ?? null,
     }
 
-    // 부분 갱신: 이번에 주지 않은 필드는 기존 값을 유지한다.
-    // COALESCE(excluded.x, state.x) 로 "null 은 무시"를 표현한다.
+    // 부분 갱신 규칙 — 두 가지 "값 없음"을 구분한다.
+    //   키를 아예 안 줌(undefined) : 이번 갱신의 관심사가 아니다 -> 기존 값 유지
+    //   키를 주면서 null          : 지우라는 뜻 -> null 로 덮는다
+    //
+    // 단조 증가하는 필드(시각·가격)는 coalesce 로 충분하지만,
+    // ws_connected_since 와 last_error 는 **null 자체가 의미 있는 값**이라
+    // coalesce 로는 지울 수 없고 무조건 덮으면 안 지울 때도 지워진다.
+    // (1초마다 도는 티커 갱신이 uptime 을 매번 날려서 실제로 겪은 문제다)
+    const clears = (key: keyof typeof patch) => key in patch
     await this.db
       .insert(collectorState)
       .values(values)
@@ -186,9 +193,13 @@ export class KlineRepository {
           lastPrice: sql`coalesce(excluded.last_price, ${collectorState.lastPrice})`,
           lastPriceAt: sql`coalesce(excluded.last_price_at, ${collectorState.lastPriceAt})`,
           lastMessageAt: sql`coalesce(excluded.last_message_at, ${collectorState.lastMessageAt})`,
-          wsConnectedSince: sql`excluded.ws_connected_since`,
+          wsConnectedSince: clears('wsConnectedSinceMs')
+            ? sql`excluded.ws_connected_since`
+            : sql`${collectorState.wsConnectedSince}`,
           reconnectCount: sql`${collectorState.reconnectCount} + excluded.reconnect_count`,
-          lastError: sql`excluded.last_error`,
+          lastError: clears('lastError')
+            ? sql`excluded.last_error`
+            : sql`${collectorState.lastError}`,
           updatedAt: sql`now()`,
         },
       })

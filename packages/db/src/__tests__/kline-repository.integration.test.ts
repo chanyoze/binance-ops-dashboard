@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createDb, type DbHandle } from '../client.js'
 import { KlineRepository } from '../kline-repository.js'
-import { klines } from '../schema.js'
+import { collectorState, klines } from '../schema.js'
 
 /**
  * 통합 테스트 — 실제 Postgres 가 필요하다.
@@ -75,10 +75,12 @@ describe.skipIf(!dbAvailable)('KlineRepository (통합)', () => {
 
   beforeEach(async () => {
     await handle.db.execute(sql`delete from ${klines} where symbol = ${SYMBOL}`)
+    await handle.db.execute(sql`delete from ${collectorState} where symbol = ${SYMBOL}`)
   })
 
   afterAll(async () => {
     await handle.db.execute(sql`delete from ${klines} where symbol = ${SYMBOL}`)
+    await handle.db.execute(sql`delete from ${collectorState} where symbol = ${SYMBOL}`)
     await handle.close()
   })
 
@@ -194,5 +196,64 @@ describe.skipIf(!dbAvailable)('KlineRepository (통합)', () => {
 
     expect(findGaps(openTimes, MINUTE)).toEqual([])
     expect(openTimes).toHaveLength(7)
+  })
+
+  /**
+   * updateState 는 부분 갱신이다. 안 준 필드는 유지되고, null 을 준 필드만 지워진다.
+   *
+   * 이 구분이 없으면 1초마다 도는 티커 갱신이 ws_connected_since 를 매번 null 로
+   * 덮어써서 uptime 지표가 항상 비어 있게 된다 — 실제로 겪은 버그다.
+   */
+  describe('updateState — 부분 갱신', () => {
+    const readState = async () => {
+      const [row] = await handle.db
+        .select()
+        .from(collectorState)
+        .where(sql`symbol = ${SYMBOL}`)
+      return row
+    }
+
+    it('안 준 필드는 유지되고 준 필드만 바뀐다', async () => {
+      const connectedAt = BASE
+      await repo.updateState(SYMBOL, '1m', {
+        wsConnectedSinceMs: connectedAt,
+        lastMessageAtMs: connectedAt,
+        lastError: null,
+      })
+
+      // 티커 갱신 — 가격/수신시각만 준다. 연결 시각은 관심사가 아니다.
+      await repo.updateState(SYMBOL, '1m', {
+        lastPrice: '64203.00000000',
+        lastPriceAtMs: connectedAt + 1_000,
+        lastMessageAtMs: connectedAt + 1_000,
+      })
+
+      const row = await readState()
+      expect(row?.wsConnectedSince?.getTime()).toBe(connectedAt)
+      expect(row?.lastPrice).toBe('64203.00000000')
+    })
+
+    it('null 을 명시하면 지워진다 (연결 끊김 = uptime 없음)', async () => {
+      await repo.updateState(SYMBOL, '1m', { wsConnectedSinceMs: BASE })
+      await repo.updateState(SYMBOL, '1m', {
+        wsConnectedSinceMs: null,
+        incrementReconnect: true,
+      })
+
+      const row = await readState()
+      expect(row?.wsConnectedSince).toBeNull()
+      expect(row?.reconnectCount).toBe(1)
+    })
+
+    it('기록된 에러가 다음 티커 갱신에 지워지지 않는다', async () => {
+      await repo.updateState(SYMBOL, '1m', { lastError: 'DB write failed' })
+      await repo.updateState(SYMBOL, '1m', { lastMessageAtMs: BASE + 2_000 })
+
+      expect((await readState())?.lastError).toBe('DB write failed')
+
+      // 재연결 성공 시에는 명시적으로 null 을 줘서 지운다.
+      await repo.updateState(SYMBOL, '1m', { lastError: null })
+      expect((await readState())?.lastError).toBeNull()
+    })
   })
 })
