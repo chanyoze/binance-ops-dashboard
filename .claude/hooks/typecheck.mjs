@@ -9,7 +9,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -27,6 +27,15 @@ const target = readTargetPath()
 
 // TypeScript 파일이 아니면 아무것도 하지 않는다.
 if (!target.endsWith('.ts') && !target.endsWith('.tsx')) process.exit(0)
+
+// 이 저장소 밖의 파일이면 관여하지 않는다.
+// 사용자 전역 설정에 등록되더라도 다른 프로젝트를 건드리지 않게 하는 가드.
+if (!isInsideRoot(target)) process.exit(0)
+
+function isInsideRoot(filePath) {
+  const normalize = (p) => resolve(p).replace(/\\/g, '/').toLowerCase()
+  return normalize(filePath).startsWith(`${normalize(ROOT)}/`)
+}
 
 try {
   execFileSync('npm', ['run', 'typecheck', '--silent'], {

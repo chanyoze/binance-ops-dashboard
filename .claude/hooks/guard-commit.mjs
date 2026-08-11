@@ -14,7 +14,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -31,6 +31,22 @@ const command = readCommand()
 
 // git commit 이 아니면 통과. (`git commit` 이 파이프/체인 중간에 있어도 잡히도록 부분 일치)
 if (!/\bgit\s+(-\S+\s+|--\S+(=\S+)?\s+)*commit\b/.test(command)) process.exit(0)
+
+// 이 저장소에 대한 커밋이 아니면 관여하지 않는다.
+// 사용자 전역 설정에 등록되더라도 다른 저장소의 커밋을 막지 않게 하는 가드.
+if (!targetsThisRepo(command)) process.exit(0)
+
+function targetsThisRepo(cmd) {
+  const normalize = (p) => resolve(p).replace(/\\/g, '/').toLowerCase()
+  const root = normalize(ROOT)
+
+  // 명령문에 이 저장소 경로가 명시되어 있으면 대상이 맞다 (`cd /c/study/... && git commit`)
+  if (normalize(cmd.replace(/\\/g, '/')).includes(root)) return true
+
+  // 아니면 현재 작업 디렉터리로 판단한다.
+  const cwd = normalize(process.cwd())
+  return cwd === root || cwd.startsWith(`${root}/`)
+}
 
 const violations = []
 
