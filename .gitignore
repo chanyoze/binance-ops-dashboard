@@ -30,6 +30,10 @@ PLAN.md
 docs/DECISIONS.md
 docs/DESIGN.md
 docs/INTERVIEW-PREP.md
+# 세션 간 인수인계 메모 — 진행 상황과 다음 할 일
+docs/HANDOFF.md
+# 레이아웃 확정용 정적 목업. 이식이 끝나면 앱 코드가 이 자리를 대신한다.
+docs/mockup/
 
 # Claude Code 개인 오버라이드 (팀 공유 설정은 .claude/settings.json)
 .claude/settings.local.json

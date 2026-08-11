@@ -131,8 +131,12 @@ docs/               공개 문서 (ARCHITECTURE / METRICS / AI-USAGE)
 ```
 
 `.gitignore` 에 개인 작업 노트(`PLAN.md`, `docs/DECISIONS.md`, `docs/DESIGN.md`,
-`docs/INTERVIEW-PREP.md`)가 포함되어 있다. **이 파일들을 커밋하지 말 것.**
-공개 문서는 그 노트를 원본으로 별도 작성한다.
+`docs/INTERVIEW-PREP.md`, `docs/HANDOFF.md`, `docs/mockup/`)가 포함되어 있다.
+**이 파일들을 커밋하지 말 것.** 공개 문서는 그 노트를 원본으로 별도 작성한다.
+
+`docs/HANDOFF.md` 는 세션 간 인수인계 메모다. **작업을 이어받는다면 이 파일부터 읽는다** —
+지금 어디까지 왔는지, 다음에 무엇을 할지, 다시 논의하지 않아도 되는 결정이 무엇인지가 들어 있다.
+작업을 끝낼 때는 이 파일을 갱신해 둔다.
 
 ## 작업 시작 전 확인
 
