@@ -1,0 +1,32 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+
+.env
+.env.local
+.env.*.local
+
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+coverage/
+.vitest/
+
+*.tsbuildinfo
+
+.vscode/
+.idea/
+
+pgdata/
+
+# ---- 작업 노트 (제출 레포에 포함하지 않음) ----
+# 설계 과정을 남긴 개인 작업 문서. 이 문서들을 원본으로
+# 공개용 docs/ARCHITECTURE.md, docs/METRICS.md 를 별도 작성한다.
+PLAN.md
+docs/DECISIONS.md
+docs/DESIGN.md
+docs/INTERVIEW-PREP.md

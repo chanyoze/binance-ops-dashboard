@@ -1,0 +1,60 @@
+# ============================================================
+#  docker compose up  ->  Postgres + 수집기가 함께 뜹니다.
+#
+#  collector 는 restart: unless-stopped 로 설정되어 있어,
+#  프로세스가 죽어도 다시 뜨고 부팅 시퀀스가 누락 구간을 백필합니다.
+#  (docs/DECISIONS.md D-02, D-12)
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: binance-ops-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-binance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-binance}
+      POSTGRES_DB: ${POSTGRES_DB:-binance_ops}
+      # 시계열 정합성을 위해 컨테이너 타임존을 UTC 로 고정합니다.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # collector 가 DB 준비 완료 후에 뜨도록 보장합니다.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-binance} -d ${POSTGRES_DB:-binance_ops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  collector:
+    build:
+      context: .
+      dockerfile: apps/collector/Dockerfile
+    container_name: binance-ops-collector
+    # 크래시하면 자동 재시작 -> 부팅 시퀀스가 갭을 백필합니다.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-binance}:${POSTGRES_PASSWORD:-binance}@postgres:5432/${POSTGRES_DB:-binance_ops}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      KLINE_INTERVAL: ${KLINE_INTERVAL:-1m}
+      BACKFILL_DAYS: ${BACKFILL_DAYS:-7}
+      STALE_THRESHOLD_MS: ${STALE_THRESHOLD_MS:-10000}
+      RECONNECT_BASE_MS: ${RECONNECT_BASE_MS:-1000}
+      RECONNECT_MAX_MS: ${RECONNECT_MAX_MS:-30000}
+      INTEGRITY_SCAN_INTERVAL_MS: ${INTEGRITY_SCAN_INTERVAL_MS:-60000}
+      BINANCE_REST_BASE: ${BINANCE_REST_BASE:-https://api.binance.com}
+      BINANCE_WS_BASE: ${BINANCE_WS_BASE:-wss://stream.binance.com:9443}
+      RATE_LIMIT_WEIGHT_PER_MIN: ${RATE_LIMIT_WEIGHT_PER_MIN:-6000}
+      RATE_LIMIT_SOFT_THRESHOLD: ${RATE_LIMIT_SOFT_THRESHOLD:-0.8}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: UTC
+
+volumes:
+  pgdata:

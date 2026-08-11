@@ -1,0 +1,31 @@
+{
+  "name": "binance-ops-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Binance 실시간 거래 데이터 수집 파이프라인 및 운영 대시보드",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "db:generate": "npm run generate -w @app/db",
+    "db:migrate": "npm run migrate -w @app/db",
+    "dev:collector": "npm run dev -w @app/collector",
+    "dev:web": "npm run dev -w @app/web",
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --build --force",
+    "demo:chaos": "node scripts/chaos.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  }
+}
