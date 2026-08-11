@@ -19,7 +19,7 @@
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --build --force",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "demo:chaos": "node scripts/chaos.mjs"
   },
   "devDependencies": {

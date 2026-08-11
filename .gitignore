@@ -30,3 +30,6 @@ PLAN.md
 docs/DECISIONS.md
 docs/DESIGN.md
 docs/INTERVIEW-PREP.md
+
+# Claude Code 개인 오버라이드 (팀 공유 설정은 .claude/settings.json)
+.claude/settings.local.json
