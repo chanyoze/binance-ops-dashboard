@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Next 는 번들러가 모듈을 해석한다. 워크스페이스의 NodeNext 설정을 그대로 쓰면
+    // 상대 임포트마다 .js 확장자를 요구해 JSX 코드가 어색해진다.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+
+    // Next 가 직접 빌드하므로 tsc 는 검사만 한다.
+    // composite 는 emit 을 전제하므로 noEmit 과 함께 쓸 수 없다.
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": true,
+
+    "allowJs": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "next-env.d.ts", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}

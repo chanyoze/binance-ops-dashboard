@@ -1,0 +1,101 @@
+/*
+ * 디자인 토큰 — docs/DESIGN.md §6 의 검증 통과 팔레트.
+ *
+ * 색은 눈으로 고르지 않고 검증기(dataviz)로 통과시킨 값이다.
+ * 시리즈 색은 정상 시각과 색각 이상 양쪽에서 ΔE 기준을 넘는다.
+ *
+ * 다크 단일로 확정했지만(§7 Q1) 값은 전부 변수로 분리해 두었다.
+ * 라이트 모드를 추가한다면 이 블록 하나만 늘리면 된다.
+ */
+:root {
+  --plane: #0d0d0d;      /* 페이지 평면 */
+  --surface: #1a1a19;    /* 카드 · 차트 표면 */
+  --surface-2: #211f1e;  /* 한 단계 뜬 표면 */
+  --grid: #2c2c2a;       /* 그리드 헤어라인 */
+  --axis: #383835;       /* 기준선 · 축 · 테두리 */
+
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-muted: #898781;
+
+  /* categorical — 정체성. 심볼이 늘면 slot 3(아쿠아) → slot 4(노랑) 순으로 배정한다. */
+  --btc: #3987e5;
+  --eth: #d95926;
+
+  /* status — 절대 "시리즈 4번"으로 재사용하지 않는다. 항상 아이콘+라벨과 함께 쓴다. */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+
+  /* 등락 — 거래소 관례(초록/빨강). 색각 모드에서 상승이 파랑으로 바뀐다. §5 */
+  --up: #0ca30c;
+  --down: #d03b3b;
+
+  --sans: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Malgun Gothic',
+    'Apple SD Gothic Neo', sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, 'D2Coding', monospace;
+
+  --radius: 8px;
+  --gap: 8px;
+}
+
+/*
+ * 색각 접근성 모드.
+ * 초록/빨강은 정상 시각에서 ΔE 33.9 로 잘 구분되지만 적록색약에서 4.1 로 무너진다.
+ * 캔들은 몸통 위치라는 기하 인코딩이 있어 색이 유일 채널은 아니지만,
+ * 그래도 선택지를 준다.
+ */
+:root[data-cvd='on'] {
+  --up: #3987e5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /* 운영 대시보드는 흘끗 보는 화면이다. 스크롤하는 순간 운영 도구가 아니게 된다. */
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--btc);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 스크린리더 전용 — 차트의 대체 텍스트 경로 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

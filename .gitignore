@@ -37,3 +37,7 @@ docs/mockup/
 
 # Claude Code 개인 오버라이드 (팀 공유 설정은 .claude/settings.json)
 .claude/settings.local.json
+
+# Next.js
+.next/
+next-env.d.ts
