@@ -26,8 +26,31 @@ import type { BackfillService } from './backfill-service.js'
 /** 상태 테이블 갱신 주기. aggTrade 는 초당 수십 건이라 매번 쓰면 DB 가 낭비된다. */
 const STATE_FLUSH_INTERVAL_MS = 1_000
 
+/**
+ * 이 수집기가 소켓에게 요구하는 전부.
+ *
+ * `ws` 의 WebSocket 을 그대로 쓰지 않고 이만큼만 뽑아 둔 이유는 테스트다.
+ * 재연결과 watchdog 은 **연결이 잘못됐을 때** 동작하는 장치인데, 진짜 소켓으로는
+ * "응답하지 않는 연결"을 만들기 어렵다. 여기서 끊어 두면 가짜 소켓으로
+ * 그 상황을 정확히 재현할 수 있다.
+ */
+export interface SocketLike {
+  on(event: 'open', handler: () => void): unknown
+  on(event: 'message', handler: (data: unknown) => void): unknown
+  on(event: 'close', handler: (code: number, reason: unknown) => void): unknown
+  on(event: 'error', handler: (error: Error) => void): unknown
+  readonly readyState: number
+  terminate(): void
+  removeAllListeners(): void
+}
+
+export type SocketFactory = (url: string) => SocketLike
+
+/** 소켓이 열려 있음을 뜻하는 값. `ws` 와 브라우저 WebSocket 모두 1 이다. */
+const SOCKET_OPEN = 1
+
 export class WsCollector {
-  private socket: WebSocket | null = null
+  private socket: SocketLike | null = null
   private watchdog: NodeJS.Timeout | null = null
   private stateFlusher: NodeJS.Timeout | null = null
   private reconnectTimer: NodeJS.Timeout | null = null
@@ -58,6 +81,8 @@ export class WsCollector {
     private readonly bus: RealtimeBus,
     private readonly backfill: BackfillService,
     private readonly logger: Logger,
+    /** 기본값은 실제 WebSocket. 테스트에서만 가짜 소켓을 넣는다. */
+    private readonly createSocket: SocketFactory = (url) => new WebSocket(url),
   ) {}
 
   start(): void {
@@ -97,12 +122,12 @@ export class WsCollector {
       attempt: this.reconnectAttempt + 1,
     })
 
-    const socket = new WebSocket(url)
+    const socket = this.createSocket(url)
     this.socket = socket
 
     socket.on('open', () => void this.onOpen())
-    socket.on('message', (data) => this.onMessage(data.toString()))
-    socket.on('close', (code, reason) => this.onClose(code, reason.toString()))
+    socket.on('message', (data) => this.onMessage(String(data)))
+    socket.on('close', (code, reason) => this.onClose(code, String(reason)))
     socket.on('error', (error) => this.onError(error))
   }
 
@@ -231,7 +256,7 @@ export class WsCollector {
   private startWatchdog(): void {
     this.watchdog = setInterval(() => {
       if (this.stopped || this.socket === null) return
-      if (this.socket.readyState !== WebSocket.OPEN) return
+      if (this.socket.readyState !== SOCKET_OPEN) return
 
       const silenceMs = Date.now() - this.lastMessageAt
       if (silenceMs < this.config.STALE_THRESHOLD_MS) return
@@ -361,7 +386,7 @@ export class WsCollector {
     reconnectAttempt: number
   } {
     return {
-      connected: this.socket?.readyState === WebSocket.OPEN,
+      connected: this.socket?.readyState === SOCKET_OPEN,
       connectedSince: this.connectedSince,
       lastMessageAt: this.lastMessageAt,
       reconnectAttempt: this.reconnectAttempt,

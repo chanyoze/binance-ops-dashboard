@@ -372,5 +372,7 @@ collector_state(symbol, interval, last_open_time,
 - **웹 빌드만 webpack 을 씁니다.** 워크스페이스 패키지가 TypeScript ESM 표준대로
   상대 임포트에 `.js` 를 붙이는데(실제 파일은 `.ts`) Turbopack 이 아직 그 치환을
   하지 않습니다. Turbopack 이 지원하면 플래그만 지우면 됩니다.
-- **테스트가 결정 로직에 집중돼 있습니다.** 백필 계획·갭 탐지·집계 정의는 자동 테스트로
-  덮여 있지만, WS 재연결과 watchdog 은 실동작 검증(`npm run demo:chaos`)에 의존합니다.
+- **실제 Binance 연결 자체는 테스트하지 않습니다.** 재연결·watchdog·갭 복구는 가짜 소켓과
+  가짜 타이머로 검증하고, 진짜 네트워크를 타는 경로는 `npm run demo:chaos` 로 확인합니다.
+  둘 중 하나만으로는 부족합니다 — 단위 테스트는 "판단이 맞는가"를, chaos 는
+  "실제로 동작하는가"를 봅니다.
