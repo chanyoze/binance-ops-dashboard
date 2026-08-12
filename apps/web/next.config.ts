@@ -46,7 +46,17 @@ const config: NextConfig = {
     },
   },
 
-  // 모노레포 루트를 알려준다. 워크스페이스 패키지를 파일 추적에 포함시킨다.
+  /**
+   * 실행에 실제로 필요한 파일만 추려 `.next/standalone` 으로 낸다.
+   *
+   * 이게 없으면 실행 이미지에 node_modules 전체(next·react·타입 등)를 다시 설치해야 해서
+   * 1GB를 넘는다. standalone 은 추적된 모듈만 넣으므로 배포 이미지가 크게 줄고,
+   * Railway 처럼 이미지를 매번 올려야 하는 환경에서 배포 시간이 직접 짧아진다.
+   */
+  output: 'standalone',
+
+  // 모노레포 루트를 알려준다. 이 값이 없으면 standalone 추적이 apps/web 만 보고
+  // 워크스페이스 패키지(packages/*)를 빠뜨린다.
   outputFileTracingRoot: repoRoot,
 
   /**

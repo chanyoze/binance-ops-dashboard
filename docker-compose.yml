@@ -56,5 +56,41 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: UTC
 
+  # 대시보드. 수집기와 **별도 프로세스**인 것이 이 구조의 요점이다 —
+  # 장기 실행 WS 연결과 웹 요청 처리는 생명주기가 다르고, 수집 심볼이 늘어도
+  # 워커만 수평 확장하면 되며 대시보드 트래픽과 서로 영향을 주지 않는다.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: binance-ops-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # 기본 3000. 그 포트가 이미 쓰이면 .env 에 WEB_PORT 를 지정하세요.
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-binance}:${POSTGRES_PASSWORD:-binance}@postgres:5432/${POSTGRES_DB:-binance_ops}
+      # 화면에 어떤 심볼을 그릴지는 수집기와 같은 값을 봐야 한다.
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      KLINE_INTERVAL: ${KLINE_INTERVAL:-1m}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: UTC
+    healthcheck:
+      # 페이지가 아니라 API 를 찌른다 — DB 조회까지 살아 있는지 확인하려는 것이다.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/dashboard?limit=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
 volumes:
   pgdata:
