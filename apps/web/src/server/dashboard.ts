@@ -21,7 +21,10 @@ export interface DashboardPayload {
   /** 서버 시각. 클라이언트 시계를 믿지 않고 이 값으로 경과를 계산한다. */
   at: number
   symbols: string[]
+  /** 지금 화면이 보고 있는 해상도 */
   interval: Interval
+  /** 수집기가 저장하는 원본 해상도. 이보다 작은 봉은 만들 수 없다. */
+  baseInterval: Interval
   ops: OpsSnapshot
   stats: MarketStats[]
   coverage: CoverageStat[]
@@ -41,9 +44,11 @@ export async function buildDashboardPayload(
   options: DashboardOptions = {},
 ): Promise<DashboardPayload> {
   const analytics = getAnalytics()
-  const { SYMBOLS } = getConfig()
+  const { SYMBOLS, KLINE_INTERVAL } = getConfig()
 
-  const interval = options.interval ?? '1m'
+  // 기본 해상도는 수집기가 저장하는 것과 같다. '1m' 을 박아 두면 수집 해상도를
+  // 바꿨을 때 대시보드만 조용히 빈 차트를 그린다.
+  const interval = options.interval ?? KLINE_INTERVAL
   const candleLimit = options.candleLimit ?? 120
   const relativeHours = options.relativeHours ?? 6
   const eventLimit = options.eventLimit ?? 30
@@ -52,7 +57,7 @@ export async function buildDashboardPayload(
   const [ops, stats, coverage, relativeStrength, events, ...candleLists] = await Promise.all([
     analytics.getOpsSnapshot(),
     analytics.getMarketStats(SYMBOLS),
-    analytics.getCoverage(SYMBOLS, '1m'),
+    analytics.getCoverage(SYMBOLS, KLINE_INTERVAL),
     analytics.getRelativeStrength(SYMBOLS, relativeHours),
     analytics.getRecentEvents(eventLimit),
     ...SYMBOLS.map((symbol) => analytics.getCandles(symbol, interval, candleLimit)),
@@ -67,6 +72,7 @@ export async function buildDashboardPayload(
     at: ops.at,
     symbols: [...SYMBOLS],
     interval,
+    baseInterval: KLINE_INTERVAL,
     ops,
     stats,
     coverage,

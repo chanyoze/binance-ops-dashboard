@@ -17,7 +17,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     const { SYMBOLS } = getConfig()
 
     const symbol = parseSymbol(params.get('symbol'), SYMBOLS)
-    const interval = parseInterval(params.get('interval'))
+    const interval = parseInterval(params.get('interval'), getConfig().KLINE_INTERVAL)
     const limit = parseInt10(params.get('limit'), 'limit', { min: 1, max: 1000, fallback: 120 })
     const ma = parseInt10(params.get('ma'), 'ma', { min: 2, max: 200, fallback: 20 })
 

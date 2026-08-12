@@ -1,0 +1,47 @@
+# 빌드 컨텍스트에서 제외할 것.
+#
+# 이게 없으면 `COPY apps/web ./apps/web` 가 **개발자 머신에서 빌드한 .next 캐시**를
+# 이미지 안으로 끌고 들어갑니다. next build 는 .next/cache 를 지우지 않으므로
+# Windows 절대 경로로 만들어진 webpack 캐시가 Linux 빌더에서 재사용되고,
+# 같은 커밋이 내 머신과 클린 클론에서 **다른 이미지**를 만들게 됩니다.
+# 재현성이 이 프로젝트의 약속이므로 컨텍스트부터 깨끗해야 합니다.
+
+# 의존성 — 이미지 안에서 npm ci 로 다시 설치합니다 (247MB)
+node_modules
+**/node_modules
+
+# 빌드 산출물 — 컨테이너 안에서 새로 만듭니다
+.next
+**/.next
+dist
+**/dist
+out
+build
+*.tsbuildinfo
+
+# 비밀값 — 이미지 레이어에 들어갈 이유가 없습니다
+.env
+.env.local
+.env.*.local
+
+# 로컬 데이터·로그
+pgdata
+coverage
+.vitest
+*.log
+
+# 버전 관리·에디터
+.git
+.gitignore
+.vscode
+.idea
+
+# 작업 노트와 목업 (제출물이 아니며 이미지에도 필요 없습니다)
+docs
+PLAN.md
+
+# 도구 설정
+.claude
+.github
+README.md
+AGENTS.md

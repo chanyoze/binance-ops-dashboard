@@ -13,7 +13,7 @@ export class BadRequest extends Error {}
 
 const INTERVALS = Object.keys(INTERVAL_MS) as Interval[]
 
-export function parseInterval(raw: string | null, fallback: Interval = '1m'): Interval {
+export function parseInterval(raw: string | null, fallback: Interval): Interval {
   if (raw === null) return fallback
   const found = INTERVALS.find((i) => i === raw)
   if (!found) {

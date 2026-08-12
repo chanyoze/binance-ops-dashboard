@@ -1,9 +1,18 @@
 # ============================================================
-#  docker compose up  ->  Postgres + 수집기가 함께 뜹니다.
+#  docker compose up  ->  Postgres · 마이그레이션 · 수집기 · 대시보드가 함께 뜹니다.
+#
+#    대시보드  http://localhost:3000   (WEB_PORT 로 바꿀 수 있습니다)
+#
+#  기동 순서는 depends_on 이 강제합니다:
+#    postgres(healthy) -> migrate(정상 종료) -> collector · web
+#  스키마 생성을 수집기 부팅의 부수효과로 두면, 수집기가 못 뜰 때
+#  대시보드까지 함께 죽습니다. 그래서 공유 단계로 분리했습니다.
 #
 #  collector 는 restart: unless-stopped 로 설정되어 있어,
 #  프로세스가 죽어도 다시 뜨고 부팅 시퀀스가 누락 구간을 백필합니다.
 #  (docs/DECISIONS.md D-02, D-12)
+#
+#  포트 3000 이 이미 쓰이고 있으면 `up` 이 실패합니다. .env 의 WEB_PORT 를 바꾸세요.
 # ============================================================
 
 services:
@@ -30,6 +39,29 @@ services:
       retries: 10
       start_period: 10s
 
+  # 스키마 생성. 한 번 돌고 끝나는 서비스입니다.
+  #
+  # 마이그레이션을 수집기 부팅의 **부수효과**로 두면, 수집기가 못 뜨는 상황
+  # (네트워크 차단, 잘못된 Binance 엔드포인트, 크래시 루프)에서 스키마가 영영
+  # 생기지 않고 대시보드도 함께 죽습니다. 두 프로세스가 공통으로 의존하는 단계이므로
+  # 별도 서비스로 올려 둘 다 이것이 끝난 뒤에 뜨게 합니다.
+  #
+  # 수집기 코드에도 runMigrations 가 남아 있습니다 — compose 밖에서 단독 실행할 때를
+  # 위한 것이고, 마이그레이션은 멱등이라 두 번 돌아도 안전합니다.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/collector/Dockerfile
+    container_name: binance-ops-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-binance}:${POSTGRES_PASSWORD:-binance}@postgres:5432/${POSTGRES_DB:-binance_ops}
+      TZ: UTC
+    command: ["npm", "run", "db:migrate"]
+
   collector:
     build:
       context: .
@@ -40,6 +72,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-binance}:${POSTGRES_PASSWORD:-binance}@postgres:5432/${POSTGRES_DB:-binance_ops}
       SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
@@ -56,9 +90,13 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: UTC
 
-  # 대시보드. 수집기와 **별도 프로세스**인 것이 이 구조의 요점이다 —
-  # 장기 실행 WS 연결과 웹 요청 처리는 생명주기가 다르고, 수집 심볼이 늘어도
-  # 워커만 수평 확장하면 되며 대시보드 트래픽과 서로 영향을 주지 않는다.
+  # 대시보드. 수집기와 **별도 프로세스**인 것이 이 구조의 요점입니다 —
+  # 장기 실행 WS 연결과 웹 요청 처리는 생명주기가 다릅니다. 웹은 배포마다 재시작되고
+  # 트래픽에 따라 복제될 수 있지만, 수집기는 무중단이어야 하고 복제하면 중복 수집이 됩니다.
+  #
+  # 이 파일은 데모용이라 웹도 한 대로 고정합니다(container_name + 고정 호스트 포트).
+  # 실제로 복제하려면 그 둘을 빼고 앞에 로드밸런서를 두면 됩니다 —
+  # 코드는 그대로입니다. 상태를 프로세스에 두지 않았기 때문입니다.
   web:
     build:
       context: .
@@ -68,26 +106,32 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # 스키마가 없으면 대시보드는 첫 화면부터 500 입니다.
+      migrate:
+        condition: service_completed_successfully
     ports:
-      # 기본 3000. 그 포트가 이미 쓰이면 .env 에 WEB_PORT 를 지정하세요.
+      # 왼쪽이 호스트 포트입니다. 3000 이 이미 쓰이면 .env 에서 WEB_PORT 만 바꾸세요.
+      # 컨테이너 안쪽은 3000 으로 고정입니다 — 헬스체크와 매핑이 같은 값을 봐야 합니다.
       - "${WEB_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-binance}:${POSTGRES_PASSWORD:-binance}@postgres:5432/${POSTGRES_DB:-binance_ops}
-      # 화면에 어떤 심볼을 그릴지는 수집기와 같은 값을 봐야 한다.
+      # 화면에 어떤 심볼을 그릴지, 어떤 해상도를 원본으로 볼지는
+      # 수집기와 **같은 값**이어야 합니다. 어긋나면 차트가 조용히 빕니다.
       SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
       KLINE_INTERVAL: ${KLINE_INTERVAL:-1m}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: UTC
     healthcheck:
-      # 페이지가 아니라 API 를 찌른다 — DB 조회까지 살아 있는지 확인하려는 것이다.
+      # 전용 헬스 엔드포인트를 씁니다. /api/dashboard 를 쓰면 15초마다 커버리지·상대강도
+      # 같은 무거운 집계를 아무도 안 보는데도 계속 돌려 수집기의 쓰기와 경합합니다.
       test:
         [
           'CMD',
           'node',
           '-e',
-          "fetch('http://127.0.0.1:3000/api/dashboard?limit=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
-      interval: 15s
+      interval: 30s
       timeout: 10s
       retries: 5
       start_period: 20s

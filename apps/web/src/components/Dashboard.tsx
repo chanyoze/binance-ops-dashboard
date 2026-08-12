@@ -27,9 +27,23 @@ import { TooltipProvider } from './Tooltip'
  * 그래서 전체를 100dvh 그리드로 잡고 각 칸이 자기 안에서만 넘치게 한다.
  */
 
-const INTERVALS = Object.keys(INTERVAL_MS) as Interval[]
 /** 화면에 노출할 인터벌. 전부 내보이면 선택지만 늘고 판단이 느려진다. */
 const VISIBLE_INTERVALS: Interval[] = ['1m', '5m', '15m', '1h']
+
+/**
+ * 고를 수 있는 인터벌 = 수집 해상도 이상이면서 그것의 정수배인 것.
+ *
+ * 1분봉을 접어 만드는 구조라 수집 해상도보다 작은 봉은 만들 수 없고,
+ * 정수배가 아니면 봉 경계가 원본과 어긋난다. 고를 수 없는 것을 보여주면
+ * 눌렀을 때 빈 차트가 나오는데, 그건 고장으로 읽힌다.
+ */
+function selectableIntervals(base: Interval): Interval[] {
+  const baseMs = INTERVAL_MS[base]
+  const options = VISIBLE_INTERVALS.filter(
+    (i) => INTERVAL_MS[i] >= baseMs && INTERVAL_MS[i] % baseMs === 0,
+  )
+  return options.length > 0 ? options : [base]
+}
 
 /** Hero 스파크라인에 쓸 관측 이력 길이 */
 const LAG_HISTORY_SIZE = 40
@@ -89,7 +103,7 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
                   color={symbolColor(symbol, symbols)}
                 >
                   {index === 0 ? (
-                    <IntervalPicker value={interval} onChange={setInterval} busy={loadingCandles} />
+                    <IntervalPicker value={interval} base={data.baseInterval} onChange={setInterval} busy={loadingCandles} />
                   ) : null}
                 </SymbolHeading>
               </header>
@@ -183,13 +197,17 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
 
 function IntervalPicker({
   value,
+  base,
   onChange,
   busy,
 }: {
   value: Interval
+  /** 수집 해상도. 이보다 작은 봉은 만들 수 없다. */
+  base: Interval
   onChange: (next: Interval) => void
   busy: boolean
 }) {
+  const options = selectableIntervals(base)
   return (
     <div
       role="group"
@@ -202,7 +220,7 @@ function IntervalPicker({
         overflow: 'hidden',
       }}
     >
-      {VISIBLE_INTERVALS.filter((i) => INTERVALS.includes(i)).map((option, index) => {
+      {options.map((option, index) => {
         const active = option === value
         return (
           <button

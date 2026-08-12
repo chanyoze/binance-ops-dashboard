@@ -111,7 +111,7 @@ Conventional Commits (`feat:` `fix:` `test:` `chore:` `docs:`), 스코프는 워
 
 ```bash
 npm install                  # 워크스페이스 전체 설치
-docker compose up            # Postgres + collector 기동
+docker compose up            # postgres -> migrate -> collector + web (대시보드 :3000)
 npm run db:migrate           # 마이그레이션
 npm run dev:collector        # 수집기 (로컬)
 npm run dev:web              # 대시보드 (로컬)

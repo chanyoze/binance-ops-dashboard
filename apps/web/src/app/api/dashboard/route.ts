@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getConfig } from '@/server/db'
 import { buildDashboardPayload } from '@/server/dashboard'
 import { parseInt10, parseInterval, toErrorResponse } from '@/server/request'
 
@@ -12,7 +13,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     const params = new URL(request.url).searchParams
 
     const payload = await buildDashboardPayload({
-      interval: parseInterval(params.get('interval')),
+      // 기본값은 수집 해상도다. '1m' 을 박으면 수집기 설정을 바꿨을 때 화면만 빈다.
+      interval: parseInterval(params.get('interval'), getConfig().KLINE_INTERVAL),
       candleLimit: parseInt10(params.get('limit'), 'limit', { min: 1, max: 1000, fallback: 120 }),
       relativeHours: parseInt10(params.get('hours'), 'hours', { min: 1, max: 168, fallback: 6 }),
       eventLimit: parseInt10(params.get('events'), 'events', { min: 1, max: 200, fallback: 30 }),

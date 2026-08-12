@@ -32,7 +32,9 @@ export function getRuntime(): WebRuntime {
 
   const runtime: WebRuntime = {
     handle,
-    analytics: new AnalyticsRepository(handle.db),
+    // 수집기가 저장하는 해상도를 그대로 원본으로 삼는다. 이 값이 어긋나면
+    // 조회가 오류 없이 빈 결과를 돌려줘서 "데이터가 없다"로만 보인다.
+    analytics: new AnalyticsRepository(handle.db, config.KLINE_INTERVAL),
     config,
   }
 

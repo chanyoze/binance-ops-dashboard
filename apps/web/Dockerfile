@@ -14,13 +14,16 @@ ENV TZ=UTC
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # 매니페스트만 먼저 복사 -> 소스가 바뀌어도 npm ci 레이어가 재사용된다
+# 워크스페이스 매니페스트는 전부 있어야 합니다 — npm 은 package.json 의 workspaces
+# 목록에 선언된 디렉터리가 실재하지 않으면 lockfile 검증에 실패합니다.
+# 다만 설치는 web 과 루트로 한정해 수집기 전용 의존성(ws 등)은 받지 않습니다.
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/db/package.json ./packages/db/
 COPY apps/collector/package.json ./apps/collector/
 COPY apps/web/package.json ./apps/web/
 
-RUN npm ci --include=dev
+RUN npm ci --include=dev --workspace @app/web --include-workspace-root
 
 COPY tsconfig.base.json ./
 COPY packages ./packages

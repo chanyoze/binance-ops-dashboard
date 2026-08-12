@@ -36,11 +36,19 @@ const MAX_CANDLES = 1000
 /** 기본 이동평균 구간. 인자로 바꿀 수 있게 열어둔다 (MA60 을 쓰려면 여기만 넘기면 된다). */
 const DEFAULT_MA_PERIOD = 20
 
-/** 원본 해상도. 수집기는 1분봉만 저장하고, 그보다 큰 봉은 전부 여기서 접는다. */
-const BASE_INTERVAL: Interval = '1m'
+/** 원본 해상도의 기본값. 수집기가 저장하는 해상도와 같아야 한다. */
+const DEFAULT_BASE_INTERVAL: Interval = '1m'
 
 export class AnalyticsRepository {
-  constructor(private readonly db: Database) {}
+  /**
+   * @param baseInterval 수집기가 실제로 저장하는 해상도. 그보다 큰 봉은 전부 여기서 접는다.
+   *   **수집기의 KLINE_INTERVAL 과 반드시 같아야 한다.** 어긋나면 조회가 빈 결과를
+   *   돌려주는데, 오류가 아니라 "데이터가 없다"로 보여서 원인을 찾기 어렵다.
+   */
+  constructor(
+    private readonly db: Database,
+    private readonly baseInterval: Interval = DEFAULT_BASE_INTERVAL,
+  ) {}
 
   /**
    * 차트용 캔들.
@@ -66,11 +74,11 @@ export class AnalyticsRepository {
     const { rows } = await this.db.execute(sql`
       with anchor as (
         select max(open_time) as t from klines
-        where symbol = ${symbol} and interval = ${BASE_INTERVAL}
+        where symbol = ${symbol} and interval = ${this.baseInterval}
       ),
       src as (
         select k.* from klines k, anchor a
-        where k.symbol = ${symbol} and k.interval = ${BASE_INTERVAL}
+        where k.symbol = ${symbol} and k.interval = ${this.baseInterval}
           and k.open_time > a.t - ${`${lookbackMinutes} minutes`}::interval
       ),
       bucketed as (
@@ -120,11 +128,11 @@ export class AnalyticsRepository {
         -- **요청한 심볼들의** 마지막 봉이 기준이다. 필터 없이 max 를 잡으면
         -- 다른 심볼이 살아 있는 동안 이 심볼의 24시간 창이 통째로 비어 버린다.
         select max(open_time) as t from klines
-        where interval = ${BASE_INTERVAL} and symbol = any(${symbolArray})
+        where interval = ${this.baseInterval} and symbol = any(${symbolArray})
       ),
       win as (
         select k.* from klines k, anchor a
-        where k.interval = ${BASE_INTERVAL}
+        where k.interval = ${this.baseInterval}
           and k.symbol = any(${symbolArray})
           and k.open_time >= a.t - interval '24 hours'
       )
@@ -231,11 +239,11 @@ export class AnalyticsRepository {
     const { rows } = await this.db.execute(sql`
       with anchor as (
         select max(open_time) as t from klines
-        where interval = ${BASE_INTERVAL} and symbol = any(${symbolArray})
+        where interval = ${this.baseInterval} and symbol = any(${symbolArray})
       ),
       src as (
         select k.symbol, k.open_time, k.close from klines k, anchor a
-        where k.interval = ${BASE_INTERVAL}
+        where k.interval = ${this.baseInterval}
           and k.symbol = any(${symbolArray})
           and k.open_time > a.t - ${`${hours} hours`}::interval
       ),
@@ -296,11 +304,11 @@ export class AnalyticsRepository {
       `),
       this.db.execute(sql`
         with anchor as (
-          select max(open_time) as t from klines where interval = ${BASE_INTERVAL}
+          select max(open_time) as t from klines where interval = ${this.baseInterval}
         )
         select coalesce(sum(k.trade_count) / 60.0 / nullif(count(distinct k.open_time), 0), 0)::float8 as rate
         from klines k, anchor a
-        where k.interval = ${BASE_INTERVAL} and k.is_closed
+        where k.interval = ${this.baseInterval} and k.is_closed
           and k.open_time > a.t - interval '5 minutes'
       `)
     ])
