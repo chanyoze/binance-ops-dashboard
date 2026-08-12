@@ -42,6 +42,16 @@ export class WsCollector {
   private readonly latestPrice = new Map<string, { price: string; at: number }>()
   private readonly dirtySymbols = new Set<string>()
 
+  /**
+   * 심볼별 마지막 수신 시각.
+   *
+   * 연결 단위 `lastMessageAt` 과 역할이 다르다. 그쪽은 "소켓이 살아 있는가"(watchdog)를
+   * 보고, 이쪽은 "이 심볼의 데이터가 얼마나 신선한가"(대시보드 Data Lag)를 본다.
+   * 한 값으로 둘 다 하려다 실제로 틀어졌다 — 체결이 뜸한 심볼의 행에 연결 단위
+   * 시각이 그대로 남아, 소켓이 멀쩡한데도 그 심볼만 lag 가 계속 자라 보였다.
+   */
+  private readonly lastMessageAtBySymbol = new Map<string, number>()
+
   constructor(
     private readonly config: AppConfig,
     private readonly repo: KlineRepository,
@@ -159,11 +169,15 @@ export class WsCollector {
   // ---------------------------------------------------------------- 수신
 
   private onMessage(raw: string): void {
-    this.lastMessageAt = Date.now()
+    const now = Date.now()
+    this.lastMessageAt = now
 
     const parsed = parseWsMessage(raw)
 
     if (parsed.kind === 'kline') {
+      // kline 도 "이 심볼의 소식"이다. 여기서 표시하지 않으면 체결이 뜸한 구간에
+      // 봉은 정상적으로 들어오는데 Data Lag 만 자라는 모순이 생긴다.
+      this.markSeen(parsed.kline.symbol, now)
       void this.handleKline(parsed.kline)
       return
     }
@@ -171,8 +185,13 @@ export class WsCollector {
     if (parsed.kind === 'trade') {
       // aggTrade 는 저장하지 않는다. 최신가만 갱신하고 버린다. (D-08)
       this.latestPrice.set(parsed.symbol, { price: parsed.price, at: parsed.tradeTime })
-      this.dirtySymbols.add(parsed.symbol)
+      this.markSeen(parsed.symbol, now)
     }
+  }
+
+  private markSeen(symbol: string, at: number): void {
+    this.lastMessageAtBySymbol.set(symbol, at)
+    this.dirtySymbols.add(symbol)
   }
 
   private async handleKline(kline: Kline): Promise<void> {
@@ -247,20 +266,23 @@ export class WsCollector {
 
     for (const symbol of symbols) {
       const latest = this.latestPrice.get(symbol)
-      if (!latest) continue
 
       try {
+        // 아직 체결을 한 번도 못 본 심볼이라도 수신 시각은 남긴다.
+        // 가격이 없다고 건너뛰면 그 심볼은 영영 stale 로 보인다.
         await this.repo.updateState(symbol, this.config.KLINE_INTERVAL, {
-          lastPrice: latest.price,
-          lastPriceAtMs: latest.at,
-          lastMessageAtMs: this.lastMessageAt,
+          lastPrice: latest?.price ?? null,
+          lastPriceAtMs: latest?.at ?? null,
+          lastMessageAtMs: this.lastMessageAtBySymbol.get(symbol) ?? this.lastMessageAt,
         })
 
-        await this.bus.publish(CHANNELS.ticker, {
-          symbol,
-          price: latest.price,
-          at: latest.at,
-        })
+        if (latest) {
+          await this.bus.publish(CHANNELS.ticker, {
+            symbol,
+            price: latest.price,
+            at: latest.at,
+          })
+        }
       } catch (error) {
         this.logger.debug('상태 갱신 실패', {
           symbol,

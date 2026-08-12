@@ -319,13 +319,18 @@ export class AnalyticsRepository {
     const lags = symbols.map((s) => s.lagSeconds).filter((v): v is number => v !== null)
     const lagSeconds = lags.length > 0 ? Math.max(...lags) : null
 
+    // 반면 "연결됐는가"는 **가장 신선한** 심볼로 판단한다.
+    // 한 심볼이 조용한 것과 소켓이 죽은 것은 다른 사건이다. 최악값으로 판정하면
+    // 조용한 심볼 하나 때문에 화면 전체가 '연결 끊김'으로 뒤집힌다.
+    const freshest = lags.length > 0 ? Math.min(...lags) : null
+
     const uptimes = stateRows
       .map((r) => numOrNull(r.uptime_seconds))
       .filter((v): v is number => v !== null)
 
     return {
       at,
-      connected: lagSeconds !== null && lagSeconds < staleThresholdSeconds,
+      connected: freshest !== null && freshest < staleThresholdSeconds,
       lagSeconds,
       uptimeMs: uptimes.length > 0 ? Math.min(...uptimes) * 1000 : null,
       reconnectCount: stateRows.reduce((sum, r) => sum + Number(r.reconnect_count ?? 0), 0),
