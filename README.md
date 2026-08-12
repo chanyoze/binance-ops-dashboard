@@ -8,6 +8,18 @@ BTCUSDT · ETHUSDT 의 시세를 WebSocket 으로 상시 수집하고, 어떤 �
 
 > 이 프로젝트는 Binance 의 공개 API 를 사용하는 비공식 프로젝트이며, Binance 와 아무런 관련이 없습니다.
 
+![대시보드](docs/images/dashboard.png)
+
+```bash
+cp .env.example .env && docker compose up     # → http://localhost:3000
+```
+
+| 문서 | 내용 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 구조 설계와 장애 시나리오 — **왜 그렇게 만들었는가** |
+| [docs/METRICS.md](docs/METRICS.md) | 지표 선정 근거와 형태·색 선택 |
+| [docs/AI-USAGE.md](docs/AI-USAGE.md) | AI 활용 방식 — 무엇을 맡기고 무엇을 직접 판단했는가 |
+
 ---
 
 ## 핵심 아이디어
@@ -135,11 +147,7 @@ npm run dev:collector
 npm run dev:web
 ```
 
-### 테스트
-
-```bash
-npm test
-```
+테스트는 [실동작 검증](#실동작-검증) 절에 있습니다.
 
 ---
 
@@ -184,16 +192,53 @@ npm test
 
 ---
 
-## 현재 진행 상황
+## 실동작 검증
 
-- [x] 모노레포 구성 · Docker Compose · 환경변수 스키마
-- [x] 백필 계획 로직 (`resolveBackfillStart` · `planBackfillPages` · `findGaps`)
-- [x] Binance REST 클라이언트 + rate limit 가드
-- [x] WebSocket 페이로드 파서
-- [ ] DB 스키마 및 마이그레이션
-- [ ] 백필 서비스 · WS 수집기 · 무결성 스캐너
-- [ ] 운영 대시보드
-- [ ] 장애 복구 재현 스크립트
+설계가 의도대로 동작하는지 실제 Binance 연결로 확인한 내용입니다.
+전부 `npm run demo:chaos` 로 재현할 수 있습니다.
+
+| 시나리오 | 결과 |
+|---|---|
+| 최초 실행 | `reason=initial` → 심볼당 1,441봉 백필 후 WS 연결 |
+| 수집기 3분 중단 후 재개 | `reason=restart` → 갭 감지, 심볼당 3봉 복구, **남은 구멍 0** |
+| 연속성 검사 | `gap_count = 0` |
+| 데이터 커버리지 | `100.00%` |
+| `docker compose up` | postgres → migrate → collector + web 전 경로 동작 |
+
+`source` 컬럼이 복구 과정을 데이터로 남깁니다.
+
+```
+13:14  ws    ← 죽기 전 실시간 수집
+13:15  rest  ← 죽는 순간 미완성이던 봉을 백필이 확정본으로 덮음
+13:16  rest  ┐
+13:17  rest  ├ 죽어 있던 구간을 백필이 메움
+13:18  rest  ┘
+13:19  ws    ← 재시작 후 실시간 재개
+```
+
+### 테스트
+
+```bash
+npm test          # 54건 (단위 28 + 통합 26)
+npm run typecheck
+```
+
+통합 테스트는 실제 Postgres 를 씁니다. DB 가 없으면 조용히 건너뛰므로
+DB 없이 `npm test` 를 돌려도 단위 테스트는 통과합니다.
+
+검증하는 것은 **이 시스템의 전제**입니다 — UPSERT 멱등성이 깨지면 `ensureRange` 통합
+설계 전체가 무너지고, 지표 정의가 어긋나면 화면이 조용히 거짓말을 합니다.
+
+---
+
+## 알려진 한계
+
+정직하게 적습니다. 자세한 내용은 [ARCHITECTURE.md §13](docs/ARCHITECTURE.md).
+
+- 수집기는 **단일 인스턴스 전제**입니다. 복제하면 중복 수집이 됩니다.
+- `LISTEN/NOTIFY` 는 커넥션 유지가 필요해 **서버리스에서 동작하지 않습니다.**
+- 웹 API 에 **인증이 없습니다.** 공개 시장 데이터만 읽는 단일 테넌트 전제입니다.
+- WS 재연결과 watchdog 은 자동 테스트가 아니라 **실동작 검증**(`demo:chaos`)에 의존합니다.
 
 ---
 
