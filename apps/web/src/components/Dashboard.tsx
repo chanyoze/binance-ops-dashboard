@@ -64,6 +64,7 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
   return (
     <TooltipProvider>
       <div
+        data-grid="root"
         style={{
           height: '100dvh',
           display: 'grid',
@@ -74,6 +75,7 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
       >
         <Panel title="Pipeline health" aside={<StatusChip ops={data.ops} connection={connection} />}>
           <div
+            data-grid="health"
             style={{
               display: 'grid',
               gridTemplateColumns: 'minmax(200px,1.1fr) repeat(3, minmax(0,1fr))',
@@ -87,7 +89,7 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
         </Panel>
 
         {/* 두 심볼이 대등하다. 인터벌 선택기는 왼쪽에 한 번만 두고 양쪽에 함께 건다. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--gap)', minHeight: 0 }}>
+        <div data-grid="candles" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--gap)', minHeight: 0 }}>
           {symbols.map((symbol, index) => (
             <Panel
               key={symbol}
@@ -118,6 +120,7 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
         </div>
 
         <div
+          data-grid="bottom"
           style={{
             display: 'grid',
             gridTemplateColumns: 'minmax(0,1.1fr) 260px minmax(0,1.15fr)',

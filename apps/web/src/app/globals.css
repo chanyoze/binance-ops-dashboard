@@ -99,3 +99,61 @@ button {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ----------------------------------------------------------------- 좁은 화면
+ *
+ * 이 대시보드는 상시 표출용이라 데스크톱(1600×900 · 1440×810)에서 **스크롤 없이**
+ * 한 화면에 들어가도록 설계했다. 그 전제를 좁은 화면까지 끌고 가면 열이 눌리면서
+ * 라벨이 잘리고 제목이 세로로 한 글자씩 쪼개진다 — 실제로 그랬다.
+ *
+ * 그래서 좁은 화면에서는 **전제를 바꾼다.** "한 화면에 다 넣는다"를 버리고
+ * 세로로 쌓아 스크롤을 허용한다. 못 쓰는 화면보다 스크롤되는 화면이 낫다.
+ *
+ * 그리드가 인라인 스타일로 잡혀 있어(컴포넌트가 값을 계산한다) 여기서 이기려면
+ * `!important` 가 필요하다. 미디어 쿼리 안에만 있으므로 데스크톱에는 닿지 않는다.
+ */
+@media (max-width: 900px) {
+  /* 한 화면 고정을 풀고 문서 흐름에 맡긴다. */
+  [data-grid='root'] {
+    height: auto !important;
+    min-height: 100dvh;
+    grid-template-rows: none !important;
+  }
+
+  /* Hero(Data lag)는 폭을 다 쓰고, 나머지 지표 셋은 2열로 접는다. */
+  [data-grid='health'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+    align-items: start !important;
+  }
+  [data-grid='health'] > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* 캔들은 좁은 폭에서 두 개를 나란히 두면 축 라벨이 서로 겹친다. */
+  [data-grid='candles'] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /*
+   * 패널에 **높이를 준다.** `min-height` 로는 두 가지가 안 된다.
+   *
+   * 하나, 패널 안의 차트는 `flex: 1 1 0` 이고 패널은 인라인으로 `min-height: 0` 을
+   * 들고 있다. 한 화면 고정을 풀면 패널 높이가 내용에 맞춰지고, 그러면 차트가
+   * **0 높이를 받아 아예 그려지지 않는다.** 헤더와 범례만 남는다 — 실제로 그랬다.
+   *
+   * 둘, 이벤트 표는 패널이 유한한 높이를 가져야 내부 스크롤이 걸린다.
+   * 안 그러면 30건이 전부 펼쳐져 페이지가 세 배로 길어진다.
+   */
+  [data-grid='candles'] > * {
+    height: 340px !important;
+  }
+
+  /* 하단 3열도 같은 이유로 편다. 260px 고정폭이 특히 문제였다. */
+  [data-grid='bottom'] {
+    grid-template-columns: 1fr !important;
+  }
+  [data-grid='bottom'] > * {
+    height: 300px !important;
+  }
+}
