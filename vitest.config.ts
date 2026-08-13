@@ -17,7 +17,9 @@ export default defineConfig({
     ],
   },
   test: {
-    include: ['packages/**/*.test.ts', 'apps/**/*.test.ts'],
+    // `.tsx` 는 React 훅·컴포넌트 테스트용이다. 해당 파일이 상단 docblock 으로
+    // `@vitest-environment jsdom` 을 지정하므로, 나머지 테스트는 node 환경 그대로다.
+    include: ['packages/**/*.test.ts', 'apps/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.next/**'],
     // 통합 테스트(DB 필요)는 별도 태그로 분리한다.
     // 순수 함수 테스트만 돌리려면: npm test -- --exclude "**/*.integration.test.ts"
