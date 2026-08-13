@@ -65,11 +65,26 @@ const config: NextConfig = {
    */
   serverExternalPackages: ['pg'],
 
-  // 대시보드는 항상 최신 데이터를 보여줘야 한다. 응답을 캐시하지 않는다.
+  /**
+   * 대시보드는 항상 최신 데이터를 보여줘야 한다. 응답을 캐시하지 않는다.
+   *
+   * **SSE 만 따로 뺀다.** 스트림 라우트는 응답에 `no-transform` 을 실어 보내는데,
+   * 여기서 `/api/:path*` 로 일괄 지정하면 그 값이 통째로 덮인다. 로컬에서는 아무
+   * 증상이 없다 — 중간에 프록시가 없기 때문이다. 그러나 CDN·리버스 프록시 뒤에
+   * 놓는 순간 **`no-transform` 이 없으면 스트림이 버퍼링되어 화면이 멈춘다.**
+   * 데이터는 계속 흐르는데 브라우저까지 도달하지 않으므로 오류도 나지 않는다.
+   *
+   * 캐시 금지는 두 경로 모두 필요하고, 압축 금지는 스트림에만 필요하다.
+   * 나머지 API 는 JSON 이 커서 압축이 이득이므로 `no-transform` 을 붙이지 않는다.
+   */
   async headers() {
     return [
       {
-        source: '/api/:path*',
+        source: '/api/stream',
+        headers: [{ key: 'Cache-Control', value: 'no-store, no-transform' }],
+      },
+      {
+        source: '/api/:path((?!stream$).*)',
         headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }],
       },
     ]
