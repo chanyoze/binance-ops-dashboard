@@ -158,6 +158,22 @@ const MUTATIONS = [
     tests: ['apps/web/src/lib/__tests__/format.test.ts'],
   },
   {
+    name: 'upsert-idempotency',
+    why: 'UPSERT 를 DO NOTHING 으로 바꾼다. 이 설계의 **전제**다 — 미완성 봉이 확정 봉으로 덮이지 않고 영구히 고착되며, 구간을 겹쳐 긁는 복구 전략 전체가 무너진다.',
+    file: 'packages/db/src/kline-repository.ts',
+    find: '.values(chunk.map(toRow))\n        .onConflictDoUpdate({',
+    replace: '.values(chunk.map(toRow))\n        .onConflictDoNothing({',
+    tests: ['packages/db/src/__tests__/kline-repository.integration.test.ts'],
+  },
+  {
+    name: 'gap-detection',
+    why: '갭 판정을 무력화한다. 구멍을 못 찾으면 무결성 스캐너가 아무것도 회수하지 않는다 — 마지막 방어선이 조용히 사라진다.',
+    file: 'packages/shared/src/backfill-plan.ts',
+    find: 'if (delta <= intervalMs) continue',
+    replace: 'if (delta >= intervalMs) continue',
+    tests: ['packages/shared/src/__tests__/backfill-plan.test.ts'],
+  },
+  {
     name: 'channel-name-guard',
     why: '채널명 검증을 등록보다 뒤로 되돌린다. 잘못된 이름이 목록에 남아 재구독 전체를 영구히 막는다.',
     file: 'packages/db/src/realtime-bus.ts',

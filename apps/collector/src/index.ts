@@ -38,7 +38,10 @@ async function main(): Promise<void> {
   logger.info('마이그레이션 확인')
   await runMigrations(config.DATABASE_URL)
 
-  const dbHandle = createDb(config.DATABASE_URL)
+  // 유휴 커넥션이 죽었을 때 프로세스가 함께 죽지 않도록 오류를 받는다.
+  const dbHandle = createDb(config.DATABASE_URL, undefined, (error) =>
+    logger.error('DB 커넥션 풀 오류 — 재연결은 풀이 처리합니다', { error: error.message }),
+  )
   const repo = new KlineRepository(dbHandle.db)
   const bus = new PgNotifyBus(config.DATABASE_URL, logger)
 

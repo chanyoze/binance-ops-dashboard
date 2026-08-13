@@ -92,6 +92,22 @@ export class PgNotifyBus implements RealtimeBus {
   private async getPublisher(): Promise<pg.Client> {
     if (this.publisher) return this.publisher
     const client = new pg.Client({ connectionString: this.connectionString })
+
+    /**
+     * 발행용 커넥션도 오류를 받아야 한다. 듣는 사람이 없으면 Node 가 처리되지 않은
+     * 예외로 올려 **프로세스를 죽인다** — DB 가 정지할 때 실제로 그렇게 죽었다.
+     *
+     * 커넥션을 비워 두기만 하면 된다. 다음 발행에서 새로 만든다.
+     * 알림 하나를 놓치는 것은 감수한다 — 수신 측은 어차피 DB 를 다시 읽고,
+     * 데이터 정합성은 klines 테이블이 지킨다.
+     */
+    client.on('error', (error) => {
+      this.logger.error('발행 커넥션 오류 — 다음 발행에서 다시 연결합니다', {
+        error: error.message,
+      })
+      if (this.publisher === client) this.publisher = null
+    })
+
     await client.connect()
     this.publisher = client
     return client

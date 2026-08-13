@@ -28,7 +28,10 @@ export function getRuntime(): WebRuntime {
   if (globalForDb.__binanceOpsRuntime) return globalForDb.__binanceOpsRuntime
 
   const config = loadConfig()
-  const handle = createDb(config.DATABASE_URL, WEB_POOL_SIZE)
+  const handle = createDb(config.DATABASE_URL, WEB_POOL_SIZE, (error) => {
+    // 유휴 커넥션 오류를 받지 않으면 Node 가 프로세스를 죽인다. 웹도 마찬가지다.
+    console.error('[db] 커넥션 풀 오류', error.message)
+  })
 
   const runtime: WebRuntime = {
     handle,

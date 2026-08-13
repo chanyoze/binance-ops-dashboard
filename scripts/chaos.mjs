@@ -5,6 +5,7 @@
  *   npm run demo:chaos                 # 3분 중단 후 재개
  *   npm run demo:chaos -- --minutes 5  # 중단 시간 변경
  *   npm run demo:chaos -- --kill       # SIGKILL 로 죽여 Docker 자동 재시작을 관찰
+ *   npm run demo:chaos -- --db         # 수집기 대신 DB 를 죽인다 (D-12 검증)
  *
  * ## 왜 이 스크립트가 필요한가
  *
@@ -24,6 +25,7 @@ import { execFileSync } from 'node:child_process'
 const DEFAULTS = {
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://binance:binance@localhost:5432/binance_ops',
   container: process.env.COLLECTOR_CONTAINER ?? 'binance-ops-collector',
+  dbContainer: process.env.DB_CONTAINER ?? 'binance-ops-db',
   interval: '1m',
   downtimeMinutes: 3,
   /** 재개 후 백필이 끝나기를 기다리는 최대 시간 */
@@ -54,6 +56,12 @@ function parseArgs(argv) {
     const arg = argv[i]
     if (arg === '--kill') {
       options.mode = 'kill'
+    } else if (arg === '--db') {
+      options.mode = 'db'
+      // DB 정지는 수집기 정지와 달리 스캐너가 회수해야 하므로, 기본 중단을 짧게 잡는다.
+      options.downtimeMinutes = 2
+      // 부팅 백필은 즉시 돌지만 스캐너는 주기(기본 60초)를 기다린다. 넉넉히 잡는다.
+      options.recoveryTimeoutMs = 240_000
     } else if (arg === '--minutes') {
       const value = Number(argv[i + 1])
       if (!Number.isFinite(value) || value <= 0 || value > 60) {
@@ -62,12 +70,16 @@ function parseArgs(argv) {
       options.downtimeMinutes = value
       i += 1
     } else if (arg === '--help' || arg === '-h') {
-      log(`사용법: npm run demo:chaos -- [--minutes N] [--kill]
+      log(`사용법: npm run demo:chaos -- [--minutes N] [--kill | --db]
 
-  --minutes N   수집기를 N분간 중단합니다 (기본 ${DEFAULTS.downtimeMinutes})
+  --minutes N   N분간 중단합니다 (기본 ${DEFAULTS.downtimeMinutes}, --db 는 2)
   --kill        stop 대신 SIGKILL 로 죽입니다.
                 compose 의 restart: unless-stopped 가 즉시 되살리므로
-                "크래시해도 부팅 시퀀스가 갭을 메운다"를 확인할 때 씁니다.`)
+                "크래시해도 부팅 시퀀스가 갭을 메운다"를 확인할 때 씁니다.
+  --db          수집기 대신 **DB** 를 죽입니다.
+                쓰기 버퍼를 두지 않기로 한 결정(D-12)을 검증합니다 —
+                DB 가 죽는 동안 쓰기는 실패하고 그 구간은 구멍으로 남지만,
+                수집기는 죽지 않고 무결성 스캐너가 나중에 회수합니다.`)
       process.exit(0)
     } else {
       fail(`알 수 없는 인자입니다: ${arg}`)
@@ -229,6 +241,183 @@ async function waitForRecovery(client, symbols, interval, marks, timeoutMs) {
   }
 }
 
+/** 컨테이너가 마지막으로 기동한 시각. 재시작 여부를 이 값의 변화로 판정한다. */
+function containerStartedAt(name) {
+  try {
+    return docker(['inspect', '-f', '{{.State.StartedAt}}', name])
+  } catch {
+    return null
+  }
+}
+
+/** DB 가 다시 받아 줄 때까지 기다렸다가 새 커넥션을 돌려준다. */
+async function reconnect(pg, databaseUrl, timeoutMs) {
+  const started = Date.now()
+  for (;;) {
+    const client = new pg.Client({ connectionString: databaseUrl })
+    try {
+      await client.connect()
+      return client
+    } catch (error) {
+      await client.end().catch(() => undefined)
+      if (Date.now() - started > timeoutMs) {
+        fail(`DB 가 살아나지 않았습니다: ${error.message}`)
+      }
+      await sleep(1_000)
+    }
+  }
+}
+
+/**
+ * DB 장애 시나리오 — **쓰기 버퍼를 두지 않기로 한 결정(D-12)을 검증한다.**
+ *
+ * 주장은 이렇다. DB 가 죽는 동안 쓰기는 실패하고 그 구간은 구멍으로 남는다.
+ * 버퍼를 두지 않는 이유는 **원본이 Binance 에 남아 있기 때문**이고, 그래서
+ * 무결성 스캐너가 나중에 그 구멍을 회수한다.
+ *
+ * 검증할 것은 셋이다.
+ *   1. DB 가 죽어도 **수집기가 죽지 않는다** (재시작조차 하지 않는다)
+ *   2. 그 구간에 실제로 구멍이 생긴다 (안 생기면 실험 자체가 무의미하다)
+ *   3. DB 가 살아난 뒤 그 구멍이 **재시작 없이** 메워진다 — 스캐너의 몫이다
+ *
+ * 3번이 요점이다. 프로세스를 죽이는 시나리오는 부팅 시퀀스가 메우지만,
+ * 여기서는 수집기가 계속 살아 있으므로 부팅 백필이 돌지 않는다.
+ */
+async function runDbChaos(pg, options) {
+  const TOTAL = 5
+  const downtimeMs = options.downtimeMinutes * 60_000
+
+  hr()
+  log(c.bold('  Chaos 데모 — DB 를 죽였다 살려 자가 치유를 확인합니다'))
+  hr()
+  log(`  대상 DB       : ${options.dbContainer}`)
+  log(`  중단 시간     : ${options.downtimeMinutes}분`)
+  log(c.dim('  검증: 수집기가 죽지 않는가 · 구멍이 생기는가 · 스캐너가 회수하는가'))
+
+  for (const [name, label] of [
+    [options.container, '수집기'],
+    [options.dbContainer, 'DB'],
+  ]) {
+    const state = containerState(name)
+    if (state !== 'running') {
+      fail(`${label} 컨테이너가 실행 중이 아닙니다 (${name}: ${state ?? '없음'}).\n  \`docker compose up -d\` 로 기동해 주세요.`)
+    }
+  }
+
+  let client = await reconnect(pg, options.databaseUrl, 10_000)
+  let exitCode = 0
+
+  try {
+    /* ---------- 1. 실험 전 상태 ---------- */
+    step(1, TOTAL, '실험 전 상태를 기록합니다')
+    const before = await snapshot(client, options.interval)
+    if (before.length === 0) {
+      fail('수집된 캔들이 없습니다. 최초 백필이 끝난 뒤 다시 실행해 주세요.')
+    }
+
+    const marks = new Map()
+    for (const row of before) {
+      marks.set(row.symbol, row.last_open_time)
+      log(
+        `      ${row.symbol.padEnd(9)} ${String(row.candles).padStart(6)}봉  ` +
+          `마지막 ${isoMinute(row.last_open_time)} ${TZ_LABEL}`,
+      )
+    }
+
+    const collectorStartedAt = containerStartedAt(options.container)
+    log(c.dim(`      수집기 기동 시각 ${collectorStartedAt} — 이 값이 바뀌면 죽었다는 뜻입니다`))
+
+    /* ---------- 2. DB 중단 ---------- */
+    step(2, TOTAL, 'DB 를 중단합니다 (수집기는 그대로 둡니다)')
+    // 죽이기 전에 우리 커넥션을 정리한다. 안 그러면 종료 중인 서버가 기다린다.
+    await client.end().catch(() => undefined)
+    docker(['stop', options.dbContainer])
+    log(`      ${c.yellow('■')} DB 정지 — 이 동안의 쓰기는 실패하고 그 구간은 구멍으로 남습니다`)
+
+    /* ---------- 3. 방치 ---------- */
+    step(3, TOTAL, `${options.downtimeMinutes}분간 방치합니다`)
+    await countdown(downtimeMs, 'DB 정지 중')
+
+    const stateDuringOutage = containerState(options.container)
+    log(`      수집기 상태: ${stateDuringOutage === 'running' ? c.green(stateDuringOutage) : c.red(String(stateDuringOutage))}`)
+
+    /* ---------- 4. DB 재개 ---------- */
+    step(4, TOTAL, 'DB 를 다시 올립니다')
+    docker(['start', options.dbContainer])
+    client = await reconnect(pg, options.databaseUrl, 60_000)
+    log(`      ${c.green('▶')} DB 복구 — 이제 스캐너가 구멍을 찾아 메울 차례입니다`)
+
+    const recovered = await waitForRecovery(
+      client,
+      [...marks.keys()],
+      options.interval,
+      marks,
+      options.recoveryTimeoutMs,
+    )
+
+    /* ---------- 5. 검증 ---------- */
+    step(5, TOTAL, '결과를 검증합니다')
+
+    const after = await snapshot(client, options.interval)
+    const startedAfter = containerStartedAt(options.container)
+    const collectorSurvived = startedAfter === collectorStartedAt
+
+    hr()
+    log(
+      `  ${'심볼'.padEnd(11)}${'중단 전'.padStart(9)}${'현재'.padStart(9)}` +
+        `${'채워짐'.padStart(9)}${'남은 구멍'.padStart(11)}`,
+    )
+    hr()
+
+    let totalFilled = 0
+    let remainingHoles = 0
+    for (const row of after) {
+      const previous = before.find((b) => b.symbol === row.symbol)
+      const filled = row.candles - (previous?.candles ?? 0)
+      const mark = marks.get(row.symbol)
+      const { missing } = mark
+        ? await missingSince(client, row.symbol, options.interval, mark)
+        : { missing: 0 }
+
+      totalFilled += filled
+      remainingHoles += missing
+      log(
+        `  ${row.symbol.padEnd(11)}${String(previous?.candles ?? 0).padStart(9)}` +
+          `${String(row.candles).padStart(9)}${String(filled).padStart(9)}` +
+          `${(missing === 0 ? c.green('0') : c.red(String(missing))).padStart(11 + 9)}`,
+      )
+    }
+    hr()
+
+    log('')
+    log(`  ${c.bold('수집기가 살아남았는가')}  ${collectorSurvived ? c.green('예 — 재시작조차 하지 않았습니다') : c.red('아니오 — 재시작되었습니다')}`)
+    log(c.dim(`      기동 시각 ${startedAfter}`))
+
+    hr()
+    if (!collectorSurvived) {
+      log(`  ${c.red('✗ FAIL')} — DB 가 죽자 수집기까지 죽었습니다.`)
+      log(c.dim('         DB 장애가 수집 프로세스를 데려가면 안 됩니다.'))
+      exitCode = 1
+    } else if (!recovered || remainingHoles > 0) {
+      log(`  ${c.red('✗ FAIL')} — 구멍이 ${remainingHoles}봉 남았습니다.`)
+      log(c.dim('         스캐너 주기(기본 60초)를 감안해 조금 더 기다린 뒤 다시 확인해 보세요.'))
+      exitCode = 1
+    } else if (totalFilled === 0) {
+      log(`  ${c.yellow('△ 확인 필요')} — 채워진 봉이 없습니다.`)
+      log(c.dim('         중단 시간이 너무 짧았을 수 있습니다. --minutes 를 늘려 보세요.'))
+    } else {
+      log(`  ${c.green('✓ PASS')} — DB 가 죽는 동안 생긴 구멍을 스스로 메웠습니다.`)
+      log(c.dim(`         수집기는 죽지 않았고, 복구한 봉 ${totalFilled}개 · 남은 구멍 0개`))
+      log(c.dim('         쓰기 버퍼 없이도 정합성이 유지된다는 것 — 원본이 Binance 에 있기 때문입니다.'))
+    }
+    hr()
+  } finally {
+    await client.end().catch(() => undefined)
+  }
+
+  process.exit(exitCode)
+}
+
 /* ---------------------------------------------------------------- 본문 */
 
 /**
@@ -250,6 +439,10 @@ async function main() {
   const options = parseArgs(process.argv.slice(2))
   const downtimeMs = options.downtimeMinutes * 60_000
 
+  // DB 장애 시나리오는 흐름이 다르다 — 커넥션 자체가 끊기므로 따로 다룬다.
+  // 머리말을 찍기 전에 갈라야 같은 제목이 두 번 나오지 않는다.
+  if (options.mode === 'db') await runDbChaos(await loadPg(), options)
+
   hr()
   log(c.bold('  Chaos 데모 — 수집기를 죽였다 살려 자가 치유를 확인합니다'))
   hr()
@@ -266,6 +459,7 @@ async function main() {
   }
 
   const pg = await loadPg()
+
   const client = new pg.Client({ connectionString: options.databaseUrl })
   try {
     await client.connect()
