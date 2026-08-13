@@ -28,7 +28,11 @@ services:
       TZ: UTC
       PGTZ: UTC
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # 루프백에만 묶습니다. 이 포트를 여는 이유는 `npm run demo:chaos` 가 호스트에서
+      # DB 를 직접 조회하기 때문이고, 그 용도에는 localhost 로 충분합니다.
+      # 기본 비밀번호가 `binance` 인 채로 0.0.0.0 에 열면, 개발 머신이 붙어 있는
+      # 네트워크 전체에 DB 가 노출됩니다.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
