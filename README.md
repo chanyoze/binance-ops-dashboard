@@ -227,7 +227,7 @@ npm run dev:web
 ### 테스트
 
 ```bash
-npm test          # 165건 (단위 139 + 통합 26)
+npm test          # 177건 (단위 151 + 통합 26)
 npm run typecheck
 ```
 
