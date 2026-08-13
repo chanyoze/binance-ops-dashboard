@@ -172,6 +172,14 @@ function scheduleStop(): void {
 
 async function stopIfIdle(): Promise<void> {
   const h = hub()
+
+  // 시작이 진행 중이면 끝나기를 기다린다. 기다리지 않으면 `h.bus`/`h.timer` 가 아직
+  // null 이라 "정지할 것이 없다"고 판단해 그냥 돌아가는데, 그 직후 start() 가 버스와
+  // 2초 주기 타이머를 채운다. 구독자 0 인 채로 둘 다 남고, 정지는 해지 클로저에서만
+  // 예약되므로 다음 구독자가 붙었다 떠날 때까지 회수되지 않는다.
+  // 실패한 start() 는 여기서 다룰 일이 아니다 — 그때는 정지할 것도 없다.
+  if (h.starting) await h.starting.catch(() => undefined)
+
   if (h.subscribers.size > 0) return
   if (h.stopping) return h.stopping
 
@@ -202,9 +210,19 @@ async function stopIfIdle(): Promise<void> {
  */
 export async function subscribe(send: Subscriber): Promise<() => void> {
   const h = hub()
+  // 등록이 start() 보다 먼저인 것은 의도다 — 정지 예약이 걸려 있는 상태에서
+  // start() 를 기다리는 동안 "구독자 0" 으로 보이면 허브가 그대로 꺼진다.
   h.subscribers.add(send)
 
-  await start()
+  try {
+    await start()
+  } catch (error) {
+    // 여기서 되돌리지 않으면 호출자는 해지 함수를 받지 못한 채 구독자만 남는다.
+    // 구독자 수가 영영 0 으로 돌아오지 않으므로 허브는 다시는 멈추지 않는다.
+    // SSE 는 3초마다 재접속하므로 DB 가 잠깐 흔들리는 동안 죽은 구독자가 계속 쌓인다.
+    h.subscribers.delete(send)
+    throw error
+  }
 
   if (h.lastOps) send({ type: 'ops', data: h.lastOps })
   else void pushOps()

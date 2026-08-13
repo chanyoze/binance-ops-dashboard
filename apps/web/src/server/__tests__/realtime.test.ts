@@ -1,4 +1,4 @@
-import type { RealtimeBus } from '@app/db'
+import { CHANNELS, type RealtimeBus } from '@app/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   __hubStateForTest,
@@ -25,6 +25,11 @@ class FakeBus implements RealtimeBus {
   /** close 가 끝나기까지의 지연 — 경합을 재현하려면 즉시 끝나면 안 된다 */
   closeDelayMs = 0
   readonly channels: string[] = []
+  /**
+   * 채널별 핸들러를 **보관한다.** 채널 이름만 기록하고 버리면,
+   * 세 채널의 핸들러가 서로 뒤바뀌어도 테스트가 전부 통과한다.
+   */
+  private readonly handlers = new Map<string, (payload: object) => void>()
 
   constructor() {
     FakeBus.created += 1
@@ -32,8 +37,16 @@ class FakeBus implements RealtimeBus {
 
   async publish(): Promise<void> {}
 
-  async subscribe(channel: string): Promise<void> {
+  async subscribe(channel: string, handler: (payload: object) => void): Promise<void> {
     this.channels.push(channel)
+    this.handlers.set(channel, handler)
+  }
+
+  /** Postgres 가 NOTIFY 를 밀어 넣는 상황. 허브의 실제 팬아웃 경로를 그대로 태운다. */
+  emit(channel: string, payload: object): void {
+    const handler = this.handlers.get(channel)
+    if (!handler) throw new Error(`구독하지 않은 채널: ${channel}`)
+    handler(payload)
   }
 
   async close(): Promise<void> {
@@ -166,32 +179,53 @@ describe('SSE 허브', () => {
   })
 
   it('구독자 하나가 터져도 나머지 전송은 계속된다', async () => {
-    const received: string[] = []
+    const received: StreamEvent[] = []
+    // 터지는 구독자가 **먼저** 등록되어 있어야 의미가 있다.
+    // 팬아웃이 첫 예외에서 멈추면 뒤의 구독자는 영영 못 받는다.
     const offBad = await subscribe(() => {
       throw new Error('구독자 폭발')
     })
-    const offGood = await subscribe((event) => received.push(event.type))
+    const offGood = await subscribe((event) => received.push(event))
 
-    buses[0]!.channels.length = 0
-    // 버스가 이벤트를 밀어 넣는 상황을 흉내낸다
-    expect(() => {
-      for (const send of [
-        () => {
-          throw new Error('폭발')
-        },
-        () => received.push('ticker'),
-      ]) {
-        try {
-          send()
-        } catch {
-          /* 허브가 삼킨다 */
-        }
-      }
-    }).not.toThrow()
+    expect(() => buses[0]!.emit(CHANNELS.ticker, { symbol: 'BTCUSDT' })).not.toThrow()
 
-    expect(received).toContain('ticker')
+    expect(received.filter((e) => e.type === 'ticker')).toEqual([
+      { type: 'ticker', data: { symbol: 'BTCUSDT' } },
+    ])
 
     offBad()
     offGood()
+  })
+
+  it('채널마다 알맞은 종류로 옮긴다', async () => {
+    // 핸들러가 서로 뒤바뀌어도 화면은 조용히 틀린 값을 그린다 —
+    // 캔들 자리에 체결이 들어오는 식이라 오류가 나지 않는다.
+    const received: StreamEvent[] = []
+    const off = await subscribe((event) => received.push(event))
+
+    buses[0]!.emit(CHANNELS.ticker, { a: 1 })
+    buses[0]!.emit(CHANNELS.kline, { b: 2 })
+    buses[0]!.emit(CHANNELS.pipeline, { c: 3 })
+
+    expect(received.filter((e) => e.type !== 'ops')).toEqual([
+      { type: 'ticker', data: { a: 1 } },
+      { type: 'kline', data: { b: 2 } },
+      { type: 'pipeline', data: { c: 3 } },
+    ])
+
+    off()
+  })
+
+  it('시작에 실패하면 구독자를 남기지 않는다', async () => {
+    // 여기서 구독자가 남으면 호출자는 해지 함수를 받지 못한 채 유령만 남는다.
+    // 구독자 수가 영영 0 으로 돌아오지 않아 허브는 다시는 멈추지 않고,
+    // SSE 가 3초마다 재접속하는 동안 유령이 계속 쌓인다.
+    __setBusFactoryForTest(() => {
+      throw new Error('DB 재기동 중')
+    })
+
+    await expect(subscribe(noop)).rejects.toThrow('DB 재기동 중')
+
+    expect(__hubStateForTest().subscribers).toBe(0)
   })
 })

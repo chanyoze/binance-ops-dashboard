@@ -46,11 +46,25 @@ export function GET(request: Request): Response {
       let unsubscribe: (() => void) | null = null
       const heartbeat = setInterval(() => write(': keep-alive\n\n'), HEARTBEAT_MS)
 
+      /**
+       * 여러 번 불려도 안전해야 한다 — `if (closed) return` 으로 막으면 안 된다.
+       *
+       * 이 함수는 두 경로에서 불린다: abort 핸들러와, 구독을 마친 뒤의 "이미 떠났나" 확인.
+       * 구독이 끝나기 **전에** 클라이언트가 끊으면 abort 가 먼저 돌면서 `closed` 만
+       * 세우고 가는데(그 시점의 `unsubscribe` 는 아직 null 이다), 뒤이은 확인이
+       * 조기 반환되면 구독이 영영 해지되지 않는다. `write()` 가 enqueue 실패로
+       * `closed` 를 세운 경우도 같다 — heartbeat 와 구독이 함께 샌다.
+       *
+       * 그래서 가드 대신, 각 자원을 한 번만 놓도록 만든다.
+       */
       const cleanup = (): void => {
-        if (closed) return
         closed = true
         clearInterval(heartbeat)
-        unsubscribe?.()
+
+        const release = unsubscribe
+        unsubscribe = null
+        release?.()
+
         try {
           controller.close()
         } catch {
