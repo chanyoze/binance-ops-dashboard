@@ -1,8 +1,9 @@
 'use client'
 
-import type { Candle, Interval, Kline, OpsSnapshot, PipelineEvent } from '@app/shared'
+import type { Interval, Kline, OpsSnapshot, PipelineEvent } from '@app/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DashboardPayload } from '@/server/dashboard'
+import { mergeKline } from './merge-kline.js'
 import { deriveStreamPhase, FALLBACK_POLL_MS, shouldPoll, type StreamPhase } from './stream-health.js'
 
 /**
@@ -169,36 +170,3 @@ export function useDashboard(initial: DashboardPayload): DashboardState {
   return { data, prices, connection, interval, setInterval, loadingCandles }
 }
 
-/**
- * 실시간으로 도착한 봉을 배열에 반영한다.
- * 같은 봉이면 덮고(진행 중 봉은 매초 갱신된다), 새 봉이면 밀어 넣으면서 앞을 자른다.
- */
-function mergeKline(prev: DashboardPayload, kline: Kline): DashboardPayload {
-  const list = prev.candles[kline.symbol]
-  if (!list) return prev
-
-  const incoming: Candle = {
-    openTime: kline.openTime,
-    open: kline.open,
-    high: kline.high,
-    low: kline.low,
-    close: kline.close,
-    volume: kline.volume,
-    quoteVolume: kline.quoteVolume,
-    tradeCount: kline.tradeCount,
-    takerBuyQuote: kline.takerBuyQuote,
-    // MA 는 서버가 윈도우 함수로 계산한다. 여기서 흉내내면 정의가 갈리므로
-    // 다음 전체 갱신 때까지 이 봉만 선이 비어 있게 둔다.
-    ma: null,
-    hasBackfill: kline.source === 'rest',
-    isClosed: kline.isClosed,
-  }
-
-  const last = list[list.length - 1]
-  const next =
-    last && last.openTime === kline.openTime
-      ? [...list.slice(0, -1), { ...incoming, ma: last.ma }]
-      : [...list, incoming].slice(-list.length)
-
-  return { ...prev, candles: { ...prev.candles, [kline.symbol]: next } }
-}
