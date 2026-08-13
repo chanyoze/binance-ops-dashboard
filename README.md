@@ -1,5 +1,7 @@
 # binance-ops-dashboard
 
+[![CI](https://github.com/chanyoze/binance-ops-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/chanyoze/binance-ops-dashboard/actions/workflows/ci.yml)
+
 Binance 실시간 거래 데이터 수집 파이프라인과 운영 대시보드.
 
 BTCUSDT · ETHUSDT 의 시세를 WebSocket 으로 상시 수집하고, 어떤 이유로든 데이터에 구멍이 생기면
