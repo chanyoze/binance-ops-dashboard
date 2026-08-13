@@ -113,6 +113,23 @@ button {
  * `!important` 가 필요하다. 미디어 쿼리 안에만 있으므로 데스크톱에는 닿지 않는다.
  */
 @media (max-width: 900px) {
+  /*
+   * **스크롤 컨테이너부터 푼다.**
+   *
+   * 위에서 `body` 에 `overflow: hidden` 을 걸어 두었다 — 한 화면에 다 넣는다는 전제의
+   * 일부다. 그런데 `body` 의 overflow 는 **뷰포트로 전파된다.** 그리드만 세로로 풀고
+   * 이걸 그대로 두면 내용은 아래로 자라는데 화면은 내려가지 않는다.
+   * 사용자에게는 "빈 여백이 남은 채 스크롤이 안 되는" 화면으로 보인다.
+   *
+   * `height: 100%` 도 함께 푼다. 이것만 남으면 body 가 뷰포트 높이에 갇힌다.
+   */
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+
   /* 한 화면 고정을 풀고 문서 흐름에 맡긴다. */
   [data-grid='root'] {
     height: auto !important;
