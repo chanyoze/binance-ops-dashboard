@@ -2,7 +2,7 @@
 
 import { INTERVAL_MS, type Interval } from '@app/shared'
 import { useEffect, useRef, useState } from 'react'
-import { symbolColor } from '@/lib/format'
+import { DISPLAY_TZ_LABEL, symbolColor } from '@/lib/format'
 import { useDashboard } from '@/lib/useDashboard'
 import type { DashboardPayload } from '@/server/dashboard'
 import { CandleChart } from './CandleChart'
@@ -128,23 +128,49 @@ export function Dashboard({ initial }: { initial: DashboardPayload }) {
           <Panel
             title="상대 강도 — 구간 시작 = 100"
             aside={
+              /*
+               * 현재 지수를 **범례에서** 읽는다.
+               *
+               * 처음에는 선 끝에 직접 라벨을 붙였다. 직접 라벨링이 범례보다 낫다는 것이
+               * 일반론이지만, 이 차트에서는 성립하지 않았다 — 구간 시작을 100 으로
+               * 맞추므로 두 값이 서로 가까운 것이 예외가 아니라 기본이고, 그러면 라벨이
+               * 같은 자리에서 겹친다. 밀어내는 규칙을 넣어도 두 줄이 붙어 읽기 어려웠다.
+               *
+               * 색은 선 끝 점이 그대로 들고 있으므로 정체성은 잃지 않는다.
+               * 값은 위치가 고정된 곳에서 읽는 편이 오히려 빠르다.
+               */
               <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--ink-2)' }}>
-                {symbols.map((symbol) => (
-                  <span key={symbol}>
-                    <i
-                      style={{
-                        display: 'inline-block',
-                        width: 14,
-                        height: 2,
-                        borderRadius: 1,
-                        marginRight: 5,
-                        verticalAlign: 'middle',
-                        background: symbolColor(symbol, symbols),
-                      }}
-                    />
-                    {symbol.replace(/USDT$/, '')}
-                  </span>
-                ))}
+                {symbols.map((symbol) => {
+                  const last = data.relativeStrength[data.relativeStrength.length - 1]?.values[symbol]
+                  return (
+                    <span key={symbol}>
+                      <i
+                        style={{
+                          display: 'inline-block',
+                          width: 14,
+                          height: 2,
+                          borderRadius: 1,
+                          marginRight: 5,
+                          verticalAlign: 'middle',
+                          background: symbolColor(symbol, symbols),
+                        }}
+                      />
+                      {symbol.replace(/USDT$/, '')}
+                      {last === undefined ? null : (
+                        <b
+                          style={{
+                            marginLeft: 5,
+                            fontFamily: 'var(--mono)',
+                            fontWeight: 600,
+                            color: 'var(--ink)',
+                          }}
+                        >
+                          {last.toFixed(2)}
+                        </b>
+                      )}
+                    </span>
+                  )
+                })}
               </div>
             }
           >
@@ -276,7 +302,7 @@ function Legend({ count }: { count: number }) {
         MA20
       </span>
       <span style={{ marginLeft: 'auto', color: 'var(--ink-muted)' }}>
-        {count}봉 · 거래량 하단 · UTC
+        {count}봉 · 거래량 하단 · {DISPLAY_TZ_LABEL}
       </span>
     </div>
   )

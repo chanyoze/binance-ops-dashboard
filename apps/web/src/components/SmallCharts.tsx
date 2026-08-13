@@ -2,7 +2,7 @@
 
 import type { RelativeStrengthPoint } from '@app/shared'
 import { useState } from 'react'
-import { fmtSigned, hhmm, shortSymbol, symbolColor } from '@/lib/format'
+import { DISPLAY_TZ_LABEL, fmtSigned, hhmm, hhmmUtc, shortSymbol, symbolColor } from '@/lib/format'
 import { useTooltip } from './Tooltip'
 import { niceTicks, useSize } from './useSize'
 
@@ -60,30 +60,6 @@ export function IndexedChart({
   const y = (v: number): number => PAD_TOP + plotHeight - ((v - lo) / (hi - lo)) * plotHeight
   const xLabelStep = Math.max(1, Math.round(count / 5))
 
-  /**
-   * 끝점 라벨의 세로 위치.
-   *
-   * 각 계열이 자기 끝점 기준으로만 라벨을 놓으면, 마지막 값이 가까울 때 두 라벨이
-   * 같은 자리에 겹쳐 글자가 뭉갠다. 이 차트는 **구간 시작을 100 으로 지수화**하므로
-   * 값이 서로 가까운 것이 예외가 아니라 기본에 가깝다 — 특히 구간이 짧을 때 그렇다.
-   *
-   * 위에서부터 순서대로 놓되, 앞 라벨과 최소 간격 안으로 들어오면 아래로 민다.
-   * 점(마커)은 실제 위치에 그대로 둔다 — 정확한 위치는 점이, 값은 라벨이 담당한다.
-   */
-  const LABEL_GAP = 12
-  const labelY: Record<string, number> = {}
-  if (ready) {
-    let prev = -Infinity
-    for (const { symbol, value } of symbols
-      .map((symbol) => ({ symbol, value: points[count - 1]?.values[symbol] }))
-      .filter((entry): entry is { symbol: string; value: number } => entry.value !== undefined)
-      .sort((a, b) => b.value - a.value)) {
-      const wanted = y(value) - 8
-      const placed = wanted - prev < LABEL_GAP ? prev + LABEL_GAP : wanted
-      labelY[symbol] = Math.min(placed, PAD_TOP + plotHeight - 2)
-      prev = placed
-    }
-  }
 
   return (
     <div ref={hostRef} style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
@@ -158,32 +134,21 @@ export function IndexedChart({
                   strokeLinecap="round"
                 />
                 {lastValue === undefined ? null : (
-                  <>
-                    {/* 끝점 마커 — 표면색 2px 링으로 겹침에서도 읽히게 */}
-                    <circle
-                      cx={x(count - 1)}
-                      cy={y(lastValue)}
-                      r={4}
-                      fill={color}
-                      stroke="var(--surface)"
-                      strokeWidth={2}
-                    />
-                    {/* 직접 라벨. 텍스트는 시리즈 색을 입지 않는다 — 정체성은 옆의 점이 담당 */}
-                    <text
-                      x={x(count - 1) - 8}
-                      y={labelY[symbol] ?? y(lastValue) - 8}
-                      textAnchor="end"
-                      fill="var(--ink)"
-                      fontSize={10.5}
-                      fontWeight={600}
-                      fontFamily="var(--mono)"
-                      stroke="var(--surface)"
-                      strokeWidth={3}
-                      paintOrder="stroke"
-                    >
-                      {`${shortSymbol(symbol)} ${lastValue.toFixed(2)}`}
-                    </text>
-                  </>
+                  /*
+                   * 끝점 마커만 남긴다. 표면색 2px 링이라 선끼리 겹쳐도 읽힌다.
+                   *
+                   * 값 라벨은 패널 헤더의 범례로 옮겼다. 지수화 차트는 두 값이 가까운 것이
+                   * 기본이라, 선 끝에 직접 붙이면 상시로 겹친다. 근거는 Dashboard.tsx 의
+                   * 해당 범례 주석에 적어 두었다.
+                   */
+                  <circle
+                    cx={x(count - 1)}
+                    cy={y(lastValue)}
+                    r={4}
+                    fill={color}
+                    stroke="var(--surface)"
+                    strokeWidth={2}
+                  />
                 )}
               </g>
             )
@@ -250,7 +215,7 @@ export function IndexedChart({
               if (!point) return
               setHover(i)
               tooltip.show({
-                title: `${hhmm(point.openTime)} UTC`,
+                title: `${hhmm(point.openTime)} ${DISPLAY_TZ_LABEL} (${hhmmUtc(point.openTime)} UTC)`,
                 x: event.clientX,
                 y: box.top + PAD_TOP,
                 rows: symbols.flatMap((symbol) => {

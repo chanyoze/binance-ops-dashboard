@@ -3,6 +3,7 @@
 import type { CoverageStat, MarketStats, OpsSnapshot, PipelineEvent } from '@app/shared'
 import type { ReactNode } from 'react'
 import {
+  DISPLAY_TZ_LABEL,
   fmtCompact,
   fmtDuration,
   fmtPrice,
@@ -319,7 +320,7 @@ export function EventLog({ events }: { events: PipelineEvent[] }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
         <thead>
           <tr>
-            {['시각 (UTC)', '이벤트', '심볼', '내용'].map((head) => (
+            {[`시각 (${DISPLAY_TZ_LABEL})`, '이벤트', '심볼', '내용'].map((head) => (
               <th
                 key={head}
                 style={{

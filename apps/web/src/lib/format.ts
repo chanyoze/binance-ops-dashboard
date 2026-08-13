@@ -32,18 +32,56 @@ export function fmtCompact(v: number): string {
 const pad = (n: number): string => String(n).padStart(2, '0')
 
 /**
- * 시각은 전부 UTC 로 표시한다.
- * 수집·저장이 UTC 이므로 화면만 로컬로 바꾸면 이벤트 로그와 봉 시각을 대조할 때
- * 머릿속에서 시차를 더해야 한다. 운영 화면에서 그 한 단계가 실수를 만든다.
+ * 화면에 적는 시간대.
+ *
+ * **수집·저장·로그는 전부 UTC 다.** 컨테이너 TZ 도 UTC 로 고정돼 있고, 시계열 정합성이
+ * 거기에 걸려 있으므로 바꾸지 않는다. 바꾸는 것은 **표시**뿐이다.
+ *
+ * 처음에는 화면도 UTC 로 두었다. 근거는 "화면만 로컬로 바꾸면 이벤트 로그와 봉 시각을
+ * 대조할 때 머릿속에서 시차를 더해야 한다"였다. 맞는 말이지만, 그 문제는 **일부만**
+ * 바꿀 때 생긴다. 화면에 나오는 시각을 전부 한 시간대로 통일하고, 원본 UTC 가 필요한
+ * 자리(툴팁)에는 두 값을 함께 적으면 대조 비용이 사라진다. `demo:chaos` 출력도 같은
+ * 시간대로 맞췄다.
+ *
+ * 그렇게 바꾸는 쪽을 택한 이유는 운영 화면이 답해야 하는 첫 질문이
+ * *"지금 이 화면이 얼마나 최신인가"* 이기 때문이다. 그 판단의 기준은 보는 사람의
+ * 벽시계다. 화면이 UTC 면 그 대조에 시차 계산이 한 단계 낀다.
+ *
+ * 브라우저 로컬 시간(`toLocaleTimeString`)으로 두지 않고 **고정**한 이유는 두 가지다.
+ * 서버 렌더와 클라이언트 렌더가 서로 다른 시간대로 문자열을 만들면 하이드레이션이
+ * 어긋나고, 무엇보다 화면에 적힌 시간대가 보는 사람마다 달라지면 **캡처·문서와 화면이
+ * 서로 안 맞는다.** 고정하고 라벨로 밝힌다.
  */
-export function hhmm(ms: number): string {
+export const DISPLAY_TIME_ZONE = 'Asia/Seoul'
+export const DISPLAY_TZ_LABEL = 'KST'
+
+/** `hourCycle: 'h23'` — 자정을 24:00 으로 적는 로캘이 있어 명시한다. */
+const hhmmFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: DISPLAY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+const hhmmssFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: DISPLAY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+export const hhmm = (ms: number): string => hhmmFmt.format(ms)
+
+export const hhmmss = (ms: number): string => hhmmssFmt.format(ms)
+
+/**
+ * 원본 그대로의 UTC.
+ * 수집기 로그·`demo:chaos`·DB 를 직접 들여다볼 때 대조하는 값이라 툴팁에 함께 적는다.
+ */
+export function hhmmUtc(ms: number): string {
   const d = new Date(ms)
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
-}
-
-export function hhmmss(ms: number): string {
-  const d = new Date(ms)
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
 }
 
 export function fmtDuration(ms: number): string {

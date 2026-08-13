@@ -2,7 +2,7 @@
 
 import type { Candle } from '@app/shared'
 import { useState } from 'react'
-import { fmtAxis, fmtCompact, fmtPrice, fmtSigned, hhmm, num } from '@/lib/format'
+import { DISPLAY_TZ_LABEL, fmtAxis, fmtCompact, fmtPrice, fmtSigned, hhmm, hhmmUtc, num } from '@/lib/format'
 import { useTooltip } from './Tooltip'
 import { niceTicks, useSize } from './useSize'
 
@@ -138,7 +138,8 @@ function Plot({
     const open = num(candle.open)
     const change = ((num(candle.close) - open) / open) * 100
     tooltip.show({
-      title: `${hhmm(candle.openTime)} UTC · ${interval}`,
+      // 툴팁에는 원본 UTC 를 함께 적는다 — 수집기 로그·demo:chaos 와 대조하는 값이다.
+      title: `${hhmm(candle.openTime)} ${DISPLAY_TZ_LABEL} (${hhmmUtc(candle.openTime)} UTC) · ${interval}`,
       x: event.clientX,
       y: box.top + Math.max(PAD_TOP, y(num(candle.high))),
       rows: [

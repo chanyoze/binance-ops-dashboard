@@ -289,7 +289,7 @@ async function main() {
       marks.set(row.symbol, row.last_open_time)
       log(
         `      ${row.symbol.padEnd(9)} ${String(row.candles).padStart(6)}봉  ` +
-          `마지막 ${isoMinute(row.last_open_time)}  ` +
+          `마지막 ${isoMinute(row.last_open_time)} ${TZ_LABEL}  ` +
           c.dim(`WS ${row.ws_count} / REST ${row.rest_count}`),
       )
     }
@@ -361,7 +361,7 @@ async function main() {
     hr()
 
     if (events.length > 0) {
-      log(`\n  ${c.bold('이 실험이 남긴 백필 기록')} ${c.dim('(pipeline_events)')}`)
+      log(`\n  ${c.bold('이 실험이 남긴 백필 기록')} ${c.dim(`(pipeline_events · 시각 ${TZ_LABEL})`)}`)
       for (const event of events) {
         const d = event.detail ?? {}
         log(
@@ -394,8 +394,31 @@ async function main() {
   process.exit(exitCode)
 }
 
-const isoMinute = (value) => new Date(value).toISOString().slice(11, 16)
-const isoSecond = (value) => new Date(value).toISOString().slice(11, 19)
+/**
+ * 시각 표기는 대시보드와 같은 시간대를 쓴다 (`apps/web/src/lib/format.ts`).
+ *
+ * 저장은 UTC 그대로다. 바꾸는 것은 표시뿐이고, **한쪽만 바꾸면** 이 출력과 화면을
+ * 대조할 때 머릿속에서 9시간을 더해야 한다. 그 한 단계가 실수를 만든다.
+ */
+const DISPLAY_TIME_ZONE = 'Asia/Seoul'
+const TZ_LABEL = 'KST'
+
+const fmtMinute = new Intl.DateTimeFormat('en-GB', {
+  timeZone: DISPLAY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+const fmtSecond = new Intl.DateTimeFormat('en-GB', {
+  timeZone: DISPLAY_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+const isoMinute = (value) => fmtMinute.format(new Date(value))
+const isoSecond = (value) => fmtSecond.format(new Date(value))
 
 main().catch((error) => {
   fail(error instanceof Error ? error.message : String(error))
