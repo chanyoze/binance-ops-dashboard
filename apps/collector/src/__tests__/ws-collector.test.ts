@@ -20,7 +20,14 @@ const MINUTE = 60_000
 
 /** 테스트가 지시하는 대로 이벤트를 발사하는 가짜 소켓 */
 class FakeSocket implements SocketLike {
-  readyState = 1 // OPEN
+  /**
+   * CONNECTING(0) 에서 시작한다 — 실제 `ws` 가 그렇다.
+   *
+   * 처음부터 OPEN 으로 두면 아직 붙지도 않은 소켓을 watchdog 이 "조용하다"고
+   * 판단해 끊어 버린다. 재연결 대기 중인 소켓이 매번 좀비로 오인되는 셈이라,
+   * 백오프를 재는 테스트에 있지도 않은 stale 이벤트가 섞인다.
+   */
+  readyState = 0
   terminated = false
   listenersRemoved = false
 
@@ -33,9 +40,18 @@ class FakeSocket implements SocketLike {
     return this
   }
 
+  /**
+   * 실제 `ws` 는 `terminate()` 뒤에 **반드시 `close` 를 발생시킨다.**
+   *
+   * 이 이벤트를 빼먹으면 watchdog 테스트가 "끊었다"까지만 확인하고 끝난다.
+   * 수집기는 `onClose` 를 통해서만 재연결을 예약하므로, 좀비를 끊고 나서
+   * 다시 붙지 않는 회귀가 생겨도 전혀 잡히지 않는다.
+   */
   terminate(): void {
     this.terminated = true
+    if (this.readyState === 3) return
     this.readyState = 3 // CLOSED
+    this.emit('close', 1006, Buffer.from('terminated'))
   }
 
   removeAllListeners(): void {
@@ -52,6 +68,7 @@ class FakeSocket implements SocketLike {
   }
 
   open(): void {
+    this.readyState = 1 // OPEN
     this.emit('open')
   }
 
@@ -247,6 +264,12 @@ describe('WsCollector', () => {
       expect(zombie.terminated).toBe(true)
       expect(h.repo.eventsOfType('stale_detected')).toHaveLength(1)
 
+      // 끊는 것으로 끝나면 수집은 멈춘 채다. 끊은 뒤 **다시 붙는 것**까지가 복구다.
+      expect(h.repo.eventsOfType('reconnecting')).toHaveLength(1)
+      await advance(3_000)
+      expect(h.sockets.length).toBeGreaterThanOrEqual(2)
+      expect(h.socket()).not.toBe(zombie)
+
       await h.collector.stop()
     })
 
@@ -276,9 +299,11 @@ describe('WsCollector', () => {
       h.socket().open()
       await advance(0)
 
+      // 끊긴 뒤에는 재연결로 새 소켓이 생기므로, 검사 대상을 미리 붙잡아 둔다.
+      const zombie = h.socket()
       await advance(11_000)
 
-      expect(h.socket().terminated).toBe(true)
+      expect(zombie.terminated).toBe(true)
       await h.collector.stop()
     })
   })
