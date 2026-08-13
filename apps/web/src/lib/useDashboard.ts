@@ -3,6 +3,7 @@
 import type { Candle, Interval, Kline, OpsSnapshot, PipelineEvent } from '@app/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DashboardPayload } from '@/server/dashboard'
+import { deriveStreamPhase, FALLBACK_POLL_MS, shouldPoll, type StreamPhase } from './stream-health.js'
 
 /**
  * 대시보드 상태.
@@ -16,7 +17,7 @@ import type { DashboardPayload } from '@/server/dashboard'
  * 한 번 다시 받아 상태를 맞춘다. 수집기가 갭을 백필하는 것과 같은 발상이다.
  */
 
-export type ConnectionState = 'connecting' | 'live' | 'reconnecting'
+export type ConnectionState = StreamPhase
 
 interface TickerMessage {
   symbol: string
@@ -54,8 +55,14 @@ export function useDashboard(initial: DashboardPayload): DashboardState {
       })
       if (!res.ok) return
       setData(await res.json())
+
+      // 틱 가격을 버린다. `prices` 는 SSE 로만 채워지는데 화면에서는
+      // `livePrice ?? stats.last` 로 **틱이 우선**한다(panels.tsx).
+      // 스트림이 멎은 동안 이것을 남겨 두면, 방금 받아온 최신 종가를 두고
+      // 멎은 시점의 틱을 현재가로 계속 보여준다. SSE 가 살아나면 곧바로 다시 찬다.
+      setPrices({})
     } catch {
-      // 실패해도 SSE 가 계속 갱신한다. 다음 재연결에서 다시 시도된다.
+      // 실패해도 다음 주기에 다시 시도된다.
     }
   }, [])
 
@@ -63,29 +70,46 @@ export function useDashboard(initial: DashboardPayload): DashboardState {
     const source = new EventSource('/api/stream')
     let everOpened = false
 
+    /**
+     * 스트림 감시용 상태. state 가 아니라 지역 변수로 둔다 —
+     * 매 이벤트마다 리렌더를 유발할 이유가 없고, 정리도 이 스코프에서 끝난다.
+     */
+    let lastSignalAt: number | null = null
+    let errored = false
+    let lastPollAt = 0
+
+    /** 무엇이든 도착했다는 것은 스트림이 살아 있다는 뜻이다. */
+    const signal = (): void => {
+      lastSignalAt = Date.now()
+      errored = false
+    }
+
     source.addEventListener('open', () => {
       // 첫 연결이 아니면 끊겼다 붙은 것이다 — 놓친 구간을 메운다.
       if (everOpened) void resync()
       everOpened = true
-      setConnection('live')
+      signal()
     })
 
     source.addEventListener('error', () => {
-      // EventSource 가 알아서 재연결한다. 상태만 표시한다.
-      setConnection('reconnecting')
+      // EventSource 가 알아서 재연결한다. 판정은 아래 감시 타이머가 한다.
+      errored = true
     })
 
     source.addEventListener('ops', (event) => {
+      signal()
       const ops = JSON.parse((event as MessageEvent<string>).data) as OpsSnapshot
       setData((prev) => ({ ...prev, ops, at: ops.at }))
     })
 
     source.addEventListener('ticker', (event) => {
+      signal()
       const tick = JSON.parse((event as MessageEvent<string>).data) as TickerMessage
       setPrices((prev) => ({ ...prev, [tick.symbol]: { price: tick.price, at: tick.at } }))
     })
 
     source.addEventListener('kline', (event) => {
+      signal()
       const kline = JSON.parse((event as MessageEvent<string>).data) as Kline
       // 1분봉 화면에서만 즉시 반영한다. 5m/1h 는 서버가 접어 주는 값이라
       // 여기서 흉내내면 화면과 API 의 계산이 갈린다.
@@ -94,11 +118,39 @@ export function useDashboard(initial: DashboardPayload): DashboardState {
     })
 
     source.addEventListener('pipeline', (event) => {
+      signal()
       const pipelineEvent = JSON.parse((event as MessageEvent<string>).data) as PipelineEvent
       setData((prev) => ({ ...prev, events: [pipelineEvent, ...prev.events].slice(0, 30) }))
     })
 
-    return () => source.close()
+    /**
+     * 스트림 감시 — 수집기의 watchdog 과 같은 역할을 브라우저에서 한다.
+     *
+     * `EventSource` 는 헤더만 받아도 `open` 을 낸다. 중간 프록시가 본문을 버퍼링하면
+     * **연결됨으로 표시된 채 아무것도 오지 않는다.** 그 상태를 여기서 잡아
+     * 화면 표시를 바로잡고, 갱신을 폴링으로 대신한다.
+     *
+     * 타이머는 하나만 둔다. 폴링 주기를 별도 타이머로 만들면 정리해야 할 것이
+     * 늘고, 그것이 오늘 이 파일 주변에서 누수가 났던 경로다.
+     *
+     * `window.setInterval` 로 쓰는 이유 — 이 훅은 차트 인터벌을 바꾸는
+     * `setInterval` 을 이미 정의하고 있어서, 그냥 쓰면 그쪽이 불린다.
+     */
+    const watchdog = window.setInterval(() => {
+      const now = Date.now()
+      const phase = deriveStreamPhase({ lastSignalAt, errored, now })
+      setConnection(phase)
+
+      if (!shouldPoll(phase)) return
+      if (now - lastPollAt < FALLBACK_POLL_MS) return
+      lastPollAt = now
+      void resync()
+    }, 1_000)
+
+    return () => {
+      window.clearInterval(watchdog)
+      source.close()
+    }
   }, [resync])
 
   const setInterval = useCallback((next: Interval) => {

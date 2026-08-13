@@ -176,8 +176,21 @@ export function StatTile({
 export function StatusChip({ ops, connection }: { ops: OpsSnapshot; connection: string }) {
   const severity = ops.connected ? lagSeverity(ops.lagSeconds) : 'critical'
   const color = `var(--${severity})`
+  /**
+   * `stalled` 를 따로 말하는 것이 이 배지의 핵심이다.
+   *
+   * 연결은 살아 있는데 데이터만 오지 않는 상태를 `live` 로 두면,
+   * 화면이 멎은 채로 "연결됨"이라고 말하게 된다. 오류도 없이 틀린 값을
+   * 맞다고 보여주는 것이라, 아무 표시도 없는 것보다 나쁘다.
+   */
   const streamLabel =
-    connection === 'live' ? null : connection === 'connecting' ? '스트림 연결 중' : '스트림 재연결 중'
+    connection === 'live'
+      ? null
+      : connection === 'connecting'
+        ? '스트림 연결 중'
+        : connection === 'stalled'
+          ? '스트림 지연 — 폴링으로 갱신 중'
+          : '스트림 재연결 중'
 
   return (
     <span
