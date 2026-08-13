@@ -20,7 +20,6 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import pg from 'pg'
 
 const DEFAULTS = {
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://binance:binance@localhost:5432/binance_ops',
@@ -232,6 +231,21 @@ async function waitForRecovery(client, symbols, interval, marks, timeoutMs) {
 
 /* ---------------------------------------------------------------- 본문 */
 
+/**
+ * `pg` 는 워크스페이스 의존성이라 `npm install` 을 거쳐야 생긴다.
+ * 그런데 이 스크립트를 가장 먼저 돌려보는 사람은 `docker compose up` 만 한 상태다 —
+ * 컨테이너 안에는 의존성이 있지만 호스트에는 없다.
+ * 정적 import 로 두면 그 사람이 받는 첫 화면이 모듈 없음 스택트레이스가 된다.
+ * 다른 실패 경로(컨테이너 없음·DB 연결 실패)와 같은 격으로 다룬다.
+ */
+async function loadPg() {
+  try {
+    return (await import('pg')).default
+  } catch {
+    fail('의존성이 설치되어 있지 않습니다.\n  이 스크립트는 호스트에서 DB 를 직접 조회하므로 `npm install` 이 한 번 필요합니다.')
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   const downtimeMs = options.downtimeMinutes * 60_000
@@ -251,6 +265,7 @@ async function main() {
     fail(`컨테이너가 실행 중이 아닙니다 (현재: ${state}).\n  \`docker compose up -d\` 로 기동한 뒤 다시 실행해 주세요.`)
   }
 
+  const pg = await loadPg()
   const client = new pg.Client({ connectionString: options.databaseUrl })
   try {
     await client.connect()

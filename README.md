@@ -130,6 +130,7 @@ docker compose up
 "재시작하면 갭을 백필한다"를 문장으로 두지 않고 돌려볼 수 있게 만들었습니다.
 
 ```bash
+npm install                     # 이 스크립트는 호스트에서 DB 를 직접 조회하므로 한 번 필요합니다
 npm run demo:chaos              # 수집기를 3분간 중단했다 재개하고 복구를 검증합니다
 npm run demo:chaos -- --kill    # SIGKILL 로 죽여 자동 재시작 경로를 확인합니다
 ```
