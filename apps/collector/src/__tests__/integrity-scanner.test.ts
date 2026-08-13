@@ -164,17 +164,48 @@ describe('IntegrityScanner', () => {
       ])
     })
 
-    it('한 심볼에서 터져도 스캐너가 멈추지 않는다', async () => {
+    it('한 심볼에서 터져도 같은 주기의 다른 심볼은 복구된다', async () => {
       // 스캐너는 무인으로 도는 장치다. 예외가 타이머를 죽이면
       // 마지막 방어선이 조용히 사라진다.
+      //
+      // 심볼 하나로 검사하면 "예외를 삼킨다"까지만 보게 된다. 정작 중요한 것은
+      // **격리**다 — 앞 심볼의 실패가 뒤 심볼의 스캔을 데려가면, 한쪽 심볼의
+      // 지속적 실패(REST 429/451, 특정 행의 제약 위반)가 다른 심볼의 구멍을
+      // 영원히 방치한다.
+      const config = makeConfig({ SYMBOLS: ['BTCUSDT', 'ETHUSDT'] })
+      const backfill = new BackfillService(
+        rest as unknown as BinanceRestClient,
+        repo as unknown as KlineRepository,
+        new FakeBus() as unknown as RealtimeBus,
+        fakeLogger(),
+      )
+      const multi = new IntegrityScanner(
+        config,
+        repo as unknown as KlineRepository,
+        backfill,
+        fakeLogger(),
+      )
+
       repo.seed(fill(NOW - 10 * MINUTE, NOW - MINUTE, [NOW - 5 * MINUTE]))
+      repo.seed(
+        fill(NOW - 10 * MINUTE, NOW - MINUTE, [NOW - 5 * MINUTE]).map((k) => ({
+          ...k,
+          symbol: 'ETHUSDT',
+        })),
+      )
+
+      // 첫 심볼(BTCUSDT)의 백필 쓰기가 터진다.
       repo.failNextUpsert = true
 
-      await expect(scanner.scanAll(NOW)).resolves.toBeUndefined()
+      await expect(multi.scanAll(NOW)).resolves.toBeUndefined()
 
-      // 다음 주기에는 정상적으로 복구된다.
-      await scanner.scanAll(NOW)
-      expect(repo.candles.has(`${SYMBOL}|1m|${NOW - 5 * MINUTE}`)).toBe(true)
+      // 터진 심볼은 못 메웠지만, 뒤 심볼은 **같은 주기 안에서** 메워져야 한다.
+      expect(repo.candles.has(`BTCUSDT|1m|${NOW - 5 * MINUTE}`)).toBe(false)
+      expect(repo.candles.has(`ETHUSDT|1m|${NOW - 5 * MINUTE}`)).toBe(true)
+
+      // 다음 주기에는 터졌던 심볼도 정상적으로 복구된다.
+      await multi.scanAll(NOW)
+      expect(repo.candles.has(`BTCUSDT|1m|${NOW - 5 * MINUTE}`)).toBe(true)
     })
   })
 })

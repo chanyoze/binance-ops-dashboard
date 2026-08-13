@@ -64,13 +64,20 @@ export class IntegrityScanner {
 
     this.running = true
     try {
+      // try 를 루프 **안쪽**에 두는 것이 요점이다. 바깥에 두면 첫 심볼이 던지는 순간
+      // 나머지 심볼의 스캔이 그 주기째로 사라진다. 한 심볼의 실패가 지속되는 상황
+      // (REST 429/451 지속, 특정 행의 제약 위반)에서는 다른 심볼의 구멍이 영원히
+      // 복구되지 않는다 — 마지막 방어선이 첫 심볼 하나 때문에 무력화되는 셈이다.
       for (const symbol of this.config.SYMBOLS) {
-        await this.scanSymbol(symbol, this.config.KLINE_INTERVAL, now)
+        try {
+          await this.scanSymbol(symbol, this.config.KLINE_INTERVAL, now)
+        } catch (error) {
+          this.logger.error('무결성 스캔 실패', {
+            symbol,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
       }
-    } catch (error) {
-      this.logger.error('무결성 스캔 실패', {
-        error: error instanceof Error ? error.message : String(error),
-      })
     } finally {
       this.running = false
     }
