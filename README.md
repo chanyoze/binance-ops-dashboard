@@ -21,6 +21,7 @@ cp .env.example .env && docker compose up     # → http://localhost:3000
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 구조 설계와 장애 시나리오 — **왜 그렇게 만들었는가** |
 | [docs/METRICS.md](docs/METRICS.md) | 지표 선정 근거와 형태·색 선택 |
+| [docs/TESTING.md](docs/TESTING.md) | 검증 방식 — **그 테스트가 실제로 무엇을 지키는지 어떻게 확인했는가** |
 | [docs/AI-USAGE.md](docs/AI-USAGE.md) | AI 활용 방식 — 무엇을 맡기고 무엇을 직접 판단했는가 |
 
 ---
@@ -227,15 +228,38 @@ npm run dev:web
 ### 테스트
 
 ```bash
-npm test          # 228건 (단위 195 + 통합 33)
 npm run typecheck
+npm test               # 228건 (단위 195 + 통합 33)
+npm run test:mutate    # 그 테스트가 실제로 무엇을 지키는지
 ```
 
 통합 테스트는 실제 Postgres 를 씁니다. DB 가 없으면 조용히 건너뛰므로
 DB 없이 `npm test` 를 돌려도 단위 테스트는 통과합니다.
 
-검증하는 것은 **이 시스템의 전제**입니다 — UPSERT 멱등성이 깨지면 `ensureRange` 통합
-설계 전체가 무너지고, 지표 정의가 어긋나면 화면이 조용히 거짓말을 합니다.
+테스트 대상은 커버리지가 아니라 **틀려도 조용한 곳**으로 골랐습니다 — UPSERT 멱등성이
+깨지면 `ensureRange` 통합 설계 전체가 무너지고, 지표 정의가 어긋나면 화면이 오류 없이
+거짓말을 합니다.
+
+### 통과하는 테스트와 회귀를 잡는 테스트는 다릅니다
+
+이 저장소에서 **아무것도 검증하지 않는 테스트가 두 번 나왔습니다.** 하나는 모듈 대신
+자기 자신을 try/catch 로 돌리고 있었고, 다른 하나는 이미 끝난 약속에도 늘 "대기 중"이라
+답하는 헬퍼를 쓰고 있었습니다. 둘 다 초록불이었고 둘 다 지키는 것이 없었습니다.
+
+그래서 테스트를 붙이는 것으로 끝내지 않고 한 번 더 검증합니다. `npm run test:mutate` 는
+코드를 **일부러 망가뜨리고** 대상 테스트가 실패하는지 확인한 뒤 원본을 되돌립니다.
+빠져나가는 변이가 하나라도 있으면 실패로 끝납니다.
+
+```
+  [1/15] rest-taker-swap            잡힘
+  [2/15] ws-volume-swap             잡힘
+  ...
+  ✓ PASS — 변이 15건이 모두 잡혔습니다.
+```
+
+[CI](.github/workflows/ci.yml) 가 이 세 단계를 전부 돌립니다 — 타입체크, 테스트
+(DB 없이 한 번·통합까지 한 번), 그리고 변이 검증. 자세한 내용은
+[docs/TESTING.md](docs/TESTING.md) 에 있습니다.
 
 ---
 
