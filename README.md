@@ -203,11 +203,15 @@ npm run dev:web
 
 | 시나리오 | 결과 |
 |---|---|
-| 최초 실행 | `reason=initial` → 심볼당 1,441봉 백필 후 WS 연결 |
-| 수집기 3분 중단 후 재개 | `reason=restart` → 갭 감지, 심볼당 3봉 복구, **남은 구멍 0** |
+| 최초 실행 | `reason=initial` → 심볼당 **10,081봉**(7일) 백필 후 WS 연결 |
+| 수집기 2분 중단 후 재개 | `reason=restart` → 갭 감지, 복구, **남은 구멍 0** |
+| **16시간 정지 후 재시작** | `gapMinutes=663` → 심볼당 **664봉** 자동 복구 |
 | 연속성 검사 | `gap_count = 0` |
 | 데이터 커버리지 | `100.00%` |
-| `docker compose up` | postgres → migrate → collector + web 전 경로 동작 |
+| 클린 클론 `docker compose up` | postgres → migrate → collector + web 전 경로 동작 |
+
+세 번째 줄은 만든 시나리오가 아닙니다. 개발 중 Docker 를 꺼 둔 사이에 실제로 생긴
+11시간짜리 공백이고, 재시작하자 부팅 시퀀스가 그대로 메웠습니다.
 
 `source` 컬럼이 복구 과정을 데이터로 남깁니다.
 
@@ -223,7 +227,7 @@ npm run dev:web
 ### 테스트
 
 ```bash
-npm test          # 120건 (단위 94 + 통합 26)
+npm test          # 165건 (단위 139 + 통합 26)
 npm run typecheck
 ```
 
