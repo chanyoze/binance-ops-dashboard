@@ -57,6 +57,16 @@ export class PgNotifyBus implements RealtimeBus {
   }
 
   async subscribe(channel: string, handler: (payload: unknown) => void): Promise<void> {
+    /*
+     * 채널명은 식별자라 파라미터 바인딩이 불가능하다. 화이트리스트 검증으로 막는다.
+     *
+     * **등록보다 먼저** 검증한다. 순서가 뒤집혀 있으면 잘못된 이름이 `handlers` 에
+     * 남은 채로 예외가 나가고, 나중에 LISTEN 커넥션이 끊겨 재구독이 돌 때 그 채널에서
+     * 던져 **정상 채널까지 되살아나지 못한다.** 재구독은 5초마다 재시도하므로
+     * 조용히 영원히 실패한다. 무결성 스캐너에서 겪은 것과 같은 모양의 사고다.
+     */
+    assertSafeChannelName(channel)
+
     const existing = this.handlers.get(channel)
     if (existing) {
       existing.push(handler)
@@ -65,8 +75,6 @@ export class PgNotifyBus implements RealtimeBus {
     this.handlers.set(channel, [handler])
 
     const client = await this.getListener()
-    // 채널명은 식별자라 파라미터 바인딩이 불가능하다. 화이트리스트 검증으로 막는다.
-    assertSafeChannelName(channel)
     await client.query(`LISTEN "${channel}"`)
     this.logger.info('실시간 채널 구독', { channel })
   }
