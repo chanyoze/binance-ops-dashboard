@@ -16,7 +16,7 @@ BTCUSDT · ETHUSDT 의 시세를 WebSocket 으로 상시 수집하고, 어떤 �
 cp .env.example .env && docker compose up     # → http://localhost:3000
 ```
 
-**라이브 데모** → https://amy-subscription-salvador-dedicated.trycloudflare.com
+**라이브 데모** → https://tsunami-oakland-delivered-albany.trycloudflare.com
 *(평가 기간 운영 · 임시 터널이라 닫혀 있을 수 있습니다 — 위 한 줄이면 동일한 화면이 뜹니다)*
 
 | 문서 | 내용 |
@@ -293,7 +293,7 @@ DB 없이 `npm test` 를 돌려도 단위 테스트는 통과합니다.
 
 ## 라이브 데모
 
-**https://amy-subscription-salvador-dedicated.trycloudflare.com** — 평가 기간 동안 운영합니다.
+**https://tsunami-oakland-delivered-albany.trycloudflare.com** — 평가 기간 동안 운영합니다.
 
 임시 터널이라 주소가 바뀌거나 닫힐 수 있습니다. **열리지 않으면 아래 재현 경로로 보시면
 됩니다.** 이 프로젝트가 보여주려는 것은 "지금 돌고 있다"가 아니라 "죽여도 스스로 복구한다"
